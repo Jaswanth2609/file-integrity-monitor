@@ -1,0 +1,15 @@
+virustotal:
+  api_key: ''
+  rate_limit_rpm: 4
+  timeout_seconds: 15
+  max_retries: 3
+database:
+  path: ~/.fim/fim_database.db
+  cache_ttl_hours: 24
+  max_history_records: 1000
+ui:
+  colored_output: true
+  progress_bar_threshold_mb: 10
+scanner:
+  chunk_size_kb: 64
+  memory_threshold_mb: 300

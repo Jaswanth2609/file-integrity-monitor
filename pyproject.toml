@@ -1,0 +1,84 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "file-integrity-monitor"
+version = "2.0.0"
+description = "Enterprise-grade File Integrity Monitor (FIM) with HMAC verification, real-time watcher, and threat intelligence"
+readme = "README.md"
+license = { text = "GPL-3.0" }
+authors = [
+    { name = "Jaswanth", email = "jaswanth@users.noreply.github.com" }
+]
+keywords = [
+    "file-integrity-monitor",
+    "fim",
+    "security",
+    "cybersecurity",
+    "virustotal",
+    "threat-intelligence",
+    "malwarebazaar",
+    "audit",
+    "blue-team"
+]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: System Administrators",
+    "Intended Audience :: Information Technology",
+    "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Security",
+    "Topic :: System :: Monitoring"
+]
+requires-python = ">=3.10"
+dependencies = [
+    "pyyaml>=6.0",
+    "requests>=2.28.0",
+    "watchdog>=3.0.0"
+]
+
+[project.optional-dependencies]
+api = [
+    "fastapi>=0.100.0",
+    "uvicorn>=0.22.0",
+    "pydantic>=2.0.0"
+]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+    "ruff>=0.1.0",
+    "black>=23.0.0",
+    "mypy>=1.0.0",
+    "bandit>=1.7.0"
+]
+
+[project.scripts]
+fim = "src.fim.cli.commands:main_cli"
+
+[project.urls]
+Homepage = "https://github.com/Jaswanth2609/file-integrity-monitor"
+Repository = "https://github.com/Jaswanth2609/file-integrity-monitor"
+Issues = "https://github.com/Jaswanth2609/file-integrity-monitor/issues"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src*", "fim*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+
+[tool.black]
+line-length = 100
+target-version = ['py310']
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
