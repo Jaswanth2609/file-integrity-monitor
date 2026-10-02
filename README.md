@@ -1,7 +1,5 @@
 
 # File Integrity Monitor (FIM) v2.1.0
-=======
-# File Integrity Monitor (FIM) v2.1.0
  (release: v2.1.0 - security advisories, key rotation, symlink defense, and non-blocking server)
 
 [![Python Version](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
