@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.0] - 2026-10-03
+
+### Security Fixes & Improvements
+- **Security Advisory (HMAC Key Hardcoding Remediated)**: Removed the static default HMAC signing key (`"fim-default-master-key-v2-secure"`). FIM now dynamically derives keys from `FIM_SECRET_KEY` or automatically generates a cryptographically secure 256-bit random key (`secrets.token_hex(32)`) persisted with strict `0600` (`rw-------`) permissions in `~/.fim/.master_key`. Includes backward-compatible key rotation and signature auto-migration.
+- **Symlink Traversal & Swap Defense (MITRE T1036)**: Replaced placeholder logic with full symlink resolution, canonical link-target fingerprinting, and swap detection. Swapping a regular file for a symlink or redirecting symlink targets is flagged as a `CRITICAL`/`HIGH` integrity violation.
+- **Non-Blocking Multi-Threaded Server**: Upgraded the REST API and Web Dashboard server from single-threaded `TCPServer` to `ThreadingTCPServer` with `daemon_threads = True`, allowing non-blocking concurrent requests and 1-click report downloads.
+- **Explicit Error Logging in Baseline Creation**: Eliminated silent exception swallowing (`except Exception: continue`). Unreadable or permission-denied files are logged via `logger.warning` and surfaced in `manifest.skipped` with exact paths and error reasons.
+- **1-Click Report Downloads**: Added dedicated HTTP endpoints and UI buttons for instant on-demand **HTML**, **CSV**, and **JSON** audit report downloads directly from the local web dashboard.
+
+---
+
 ## [2.0.0] - 2026-10-02
 
 ### Added

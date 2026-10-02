@@ -1,5 +1,5 @@
 """
-File Integrity Monitor (FIM) v2.0 Package Root.
+File Integrity Monitor (FIM) v2.1 Package Root.
 Author: Jaswanth (Jaswanth2609)
 Repository: https://github.com/Jaswanth2609/file-integrity-monitor
 """

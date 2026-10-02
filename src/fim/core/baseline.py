@@ -1,7 +1,7 @@
 """
-Baseline Management Engine for FIM v2.0.
+Baseline Management Engine for FIM v2.1.
 Handles baseline creation, cryptographic HMAC-SHA256 signing, tamper verification,
-named profiles, glob filtering, diffing, symlink resolution, and baseline acceptance.
+named profiles, glob filtering, diffing, symlink resolution, key migration, and baseline acceptance.
 """
 
 import fnmatch
@@ -88,7 +88,12 @@ class BaselineManager:
             max_workers=int(self.config.get("hashing.max_workers", 4))
         )
 
-    def _calculate_hmac_signature(self, files: List[Dict[str, Any]], secret_key: Optional[str] = None) -> str:
+    def _calculate_hmac_signature(
+        self,
+        files: List[Dict[str, Any]],
+        secret_key: Optional[str] = None,
+        legacy_format: bool = False
+    ) -> str:
         """
         Calculates HMAC-SHA256 signature across all canonical sorted file records.
         """
@@ -96,10 +101,20 @@ class BaselineManager:
         sorted_files = sorted(files, key=lambda x: x["path"])
         payload_parts = []
         for f in sorted_files:
-            sym_target = str(f.get("symlink_target") or "")
-            payload_parts.append(
-                f"{f['path']}:{f['hash']}:{f.get('size', 0)}:{f.get('mode', 0)}:{f.get('mtime', 0.0)}:{sym_target}"
-            )
+            if legacy_format:
+                payload_parts.append(
+                    f"{f['path']}:{f['hash']}:{f.get('size', 0)}:{f.get('mode', 0)}:{f.get('mtime', 0.0)}"
+                )
+            else:
+                sym_target = str(f.get("symlink_target") or "")
+                if sym_target:
+                    payload_parts.append(
+                        f"{f['path']}:{f['hash']}:{f.get('size', 0)}:{f.get('mode', 0)}:{f.get('mtime', 0.0)}:{sym_target}"
+                    )
+                else:
+                    payload_parts.append(
+                        f"{f['path']}:{f['hash']}:{f.get('size', 0)}:{f.get('mode', 0)}:{f.get('mtime', 0.0)}"
+                    )
         
         canonical_str = "\n".join(payload_parts).encode("utf-8")
         return hmac.new(key, canonical_str, hashlib.sha256).hexdigest()
@@ -251,6 +266,7 @@ class BaselineManager:
     def load_baseline(self, name: str, verify: bool = True) -> BaselineManifest:
         """
         Loads a baseline by name and verifies HMAC signature against tampering.
+        Handles key rotation migrations seamlessly.
         """
         raw = self.db.get_baseline(name)
         if not raw:
@@ -261,7 +277,28 @@ class BaselineManager:
 
         if verify and self.config.get("baseline.sign_baselines", True):
             recomputed = self._calculate_hmac_signature(files_data)
-            if not hmac.compare_digest(recorded_sig, recomputed):
+            valid = hmac.compare_digest(recorded_sig, recomputed)
+
+            # Check legacy payload format if direct match fails
+            if not valid:
+                legacy_sig = self._calculate_hmac_signature(files_data, legacy_format=True)
+                if hmac.compare_digest(recorded_sig, legacy_sig):
+                    valid = True
+
+            # Check previous static key rotation (migrate to new random master key)
+            if not valid:
+                old_key_sig = self._calculate_hmac_signature(
+                    files_data, secret_key="fim-default-master-key-v2-secure", legacy_format=True
+                )
+                if hmac.compare_digest(recorded_sig, old_key_sig):
+                    valid = True
+                    # Re-sign with current secure key
+                    new_sig = self._calculate_hmac_signature(files_data)
+                    with self.db.get_connection() as conn:
+                        conn.execute("UPDATE baselines SET signature = ? WHERE id = ?", (new_sig, raw["id"]))
+                    recorded_sig = new_sig
+
+            if not valid:
                 raise BaselineTamperedError(
                     f"Baseline '{name}' HMAC signature mismatch! Expected: {recorded_sig[:12]}..., Computed: {recomputed[:12]}..."
                 )

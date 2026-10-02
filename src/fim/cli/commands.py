@@ -25,11 +25,11 @@ from ..storage.db import DatabaseManager
 def create_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="fim",
-        description="File Integrity Monitor (FIM) v2.0 - Enterprise File Integrity & Threat Intelligence",
+        description="File Integrity Monitor (FIM) v2.1 - Enterprise File Integrity & Threat Intelligence",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("--config", "-c", help="Path to custom configuration file (YAML/JSON)")
-    parser.add_argument("--version", "-v", action="version", version="FIM v2.0.0 (by Jaswanth)")
+    parser.add_argument("--version", "-v", action="version", version="FIM v2.1.0 (by Jaswanth)")
 
     subparsers = parser.add_subparsers(dest="command", help="Available subcommands")
 
