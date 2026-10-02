@@ -261,10 +261,11 @@ def run_server(host: str = "127.0.0.1", port: int = 8000, config: Optional[Confi
     FIMHttpHandler.comparator = comp
     FIMHttpHandler.web_dir = web_dir
 
-    socketserver.TCPServer.allow_reuse_address = True
-    with socketserver.TCPServer((host, port), FIMHttpHandler) as httpd:
+    socketserver.ThreadingTCPServer.allow_reuse_address = True
+    socketserver.ThreadingTCPServer.daemon_threads = True
+    with socketserver.ThreadingTCPServer((host, port), FIMHttpHandler) as httpd:
         print(f"\n=======================================================")
-        print(f" 🛡️  FIM v2.0 REST API & Web Dashboard Running")
+        print(f" 🛡️  FIM v2.0 REST API & Web Dashboard Running (Multi-threaded)")
         print(f" URL: http://{host}:{port}/")
         print(f" Download HTML Report : http://{host}:{port}/api/reports/html")
         print(f" Download CSV Report  : http://{host}:{port}/api/reports/csv")

@@ -84,6 +84,7 @@ class DatabaseManager:
                     mtime REAL DEFAULT 0.0,
                     ctime REAL DEFAULT 0.0,
                     inode INTEGER DEFAULT 0,
+                    symlink_target TEXT DEFAULT '',
                     FOREIGN KEY (baseline_id) REFERENCES baselines(id) ON DELETE CASCADE
                 )
             """)
@@ -211,14 +212,15 @@ class DatabaseManager:
                     f.get("gid", 0),
                     f.get("mtime", 0.0),
                     f.get("ctime", 0.0),
-                    f.get("inode", 0)
+                    f.get("inode", 0),
+                    str(f.get("symlink_target") or "")
                 )
                 for f in files_data
             ]
             cursor.executemany("""
                 INSERT INTO baseline_files (
-                    baseline_id, path, size, hash, mode, uid, gid, mtime, ctime, inode
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    baseline_id, path, size, hash, mode, uid, gid, mtime, ctime, inode, symlink_target
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, records)
 
             chain = AuditChain(conn)

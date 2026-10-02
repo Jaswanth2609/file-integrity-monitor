@@ -1,13 +1,14 @@
 """
 Baseline Management Engine for FIM v2.0.
 Handles baseline creation, cryptographic HMAC-SHA256 signing, tamper verification,
-named profiles, glob filtering, diffing, and baseline acceptance.
+named profiles, glob filtering, diffing, symlink resolution, and baseline acceptance.
 """
 
 import fnmatch
 import hmac
 import hashlib
 import json
+import logging
 import os
 import stat
 import time
@@ -20,6 +21,8 @@ from ..config import ConfigManager
 from ..errors import BaselineTamperedError, FileNotFoundError_
 from ..storage.db import DatabaseManager
 
+logger = logging.getLogger("fim.baseline")
+
 @dataclass
 class BaselineEntry:
     path: str
@@ -31,6 +34,8 @@ class BaselineEntry:
     mtime: float = 0.0
     ctime: float = 0.0
     inode: int = 0
+    is_symlink: bool = False
+    symlink_target: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -42,7 +47,9 @@ class BaselineEntry:
             "gid": self.gid,
             "mtime": self.mtime,
             "ctime": self.ctime,
-            "inode": self.inode
+            "inode": self.inode,
+            "is_symlink": self.is_symlink,
+            "symlink_target": self.symlink_target
         }
 
 @dataclass
@@ -53,6 +60,7 @@ class BaselineManifest:
     algo: str
     signature: str
     files: Dict[str, BaselineEntry] = field(default_factory=dict)
+    skipped: List[Dict[str, str]] = field(default_factory=list)
     version: int = 1
 
     def to_dict(self) -> Dict[str, Any]:
@@ -63,7 +71,9 @@ class BaselineManifest:
             "algo": self.algo,
             "signature": self.signature,
             "version": self.version,
-            "file_count": len(self.files)
+            "file_count": len(self.files),
+            "skipped_count": len(self.skipped),
+            "skipped": self.skipped
         }
 
 class BaselineManager:
@@ -83,11 +93,13 @@ class BaselineManager:
         Calculates HMAC-SHA256 signature across all canonical sorted file records.
         """
         key = (secret_key or self.config.secret_key).encode("utf-8")
-        # Sort canonically by path
         sorted_files = sorted(files, key=lambda x: x["path"])
         payload_parts = []
         for f in sorted_files:
-            payload_parts.append(f"{f['path']}:{f['hash']}:{f['size']}:{f.get('mode', 0)}:{f.get('mtime', 0.0)}")
+            sym_target = str(f.get("symlink_target") or "")
+            payload_parts.append(
+                f"{f['path']}:{f['hash']}:{f.get('size', 0)}:{f.get('mode', 0)}:{f.get('mtime', 0.0)}:{sym_target}"
+            )
         
         canonical_str = "\n".join(payload_parts).encode("utf-8")
         return hmac.new(key, canonical_str, hashlib.sha256).hexdigest()
@@ -97,14 +109,12 @@ class BaselineManager:
         name = path.name
         path_str = str(path)
 
-        # Exclude patterns
         for pat in exclude_patterns:
             if fnmatch.fnmatch(name, pat) or fnmatch.fnmatch(path_str, pat):
                 return True
             if pat.endswith("/*") and pat[:-2] in path_str:
                 return True
 
-        # If include patterns are specified, ensure it matches at least one
         if include_patterns and include_patterns != ["*"]:
             matched = any(fnmatch.fnmatch(name, pat) or fnmatch.fnmatch(path_str, pat) for pat in include_patterns)
             if not matched:
@@ -128,13 +138,12 @@ class BaselineManager:
             rp = Path(root).expanduser().resolve()
             if not rp.exists():
                 continue
-            if rp.is_file():
+            if rp.is_file() or os.path.islink(rp):
                 if not self._should_exclude(rp, excludes, includes):
                     collected.add(rp)
             elif rp.is_dir():
-                for root_dir, dirs, files in os.walk(rp):
+                for root_dir, dirs, files in os.walk(rp, followlinks=bool(self.config.get("hashing.follow_symlinks", False))):
                     current_dir_p = Path(root_dir)
-                    # Filter subdirectories
                     dirs[:] = [d for d in dirs if not self._should_exclude(current_dir_p / d, excludes, includes)]
                     for fname in files:
                         fp = current_dir_p / fname
@@ -154,18 +163,29 @@ class BaselineManager:
     ) -> BaselineManifest:
         """
         Generates a new signed baseline for given paths and saves to database.
+        Explicitly tracks and logs any skipped or unreadable files.
         """
         selected_algo = (algo or self.config.get("hashing.default_algorithm", "sha256")).lower()
         files = self.collect_files(paths, exclude_patterns, include_patterns)
+        follow_symlinks = bool(self.config.get("hashing.follow_symlinks", False))
 
         file_entries: List[Dict[str, Any]] = []
+        skipped_files: List[Dict[str, str]] = []
         total = len(files)
 
         for idx, fp in enumerate(files, 1):
             try:
-                st = fp.stat()
-                hash_dict = self.hasher.calculate_hashes(fp, algorithms=[selected_algo])
-                f_hash = hash_dict.get(selected_algo, "")
+                is_link = os.path.islink(fp)
+                link_target = os.readlink(fp) if is_link else None
+
+                if is_link and not follow_symlinks:
+                    st = os.lstat(fp)
+                    f_hash = hashlib.sha256(f"SYMLINK:{link_target}".encode("utf-8")).hexdigest()
+                else:
+                    st = fp.stat()
+                    hash_dict = self.hasher.calculate_hashes(fp, algorithms=[selected_algo])
+                    f_hash = hash_dict.get(selected_algo, "")
+
                 entry = {
                     "path": str(fp),
                     "size": st.st_size,
@@ -175,13 +195,19 @@ class BaselineManager:
                     "gid": getattr(st, "st_gid", 0),
                     "mtime": st.st_mtime,
                     "ctime": getattr(st, "st_ctime", 0.0),
-                    "inode": getattr(st, "st_ino", 0)
+                    "inode": getattr(st, "st_ino", 0),
+                    "is_symlink": is_link,
+                    "symlink_target": link_target
                 }
                 file_entries.append(entry)
                 if progress_callback:
                     progress_callback(idx, total, str(fp))
-            except Exception:
-                continue
+            except Exception as e:
+                err_msg = str(e)
+                logger.warning(f"Could not baseline file '{fp}': {err_msg}")
+                skipped_files.append({"path": str(fp), "error": err_msg})
+                if progress_callback:
+                    progress_callback(idx, total, f"[SKIPPED] {fp}")
 
         signature = self._calculate_hmac_signature(file_entries)
         root_strs = [str(Path(p).expanduser().resolve()) for p in paths]
@@ -205,7 +231,9 @@ class BaselineManager:
                 gid=f.get("gid", 0),
                 mtime=f.get("mtime", 0.0),
                 ctime=f.get("ctime", 0.0),
-                inode=f.get("inode", 0)
+                inode=f.get("inode", 0),
+                is_symlink=f.get("is_symlink", False),
+                symlink_target=f.get("symlink_target")
             )
             for f in file_entries
         }
@@ -216,7 +244,8 @@ class BaselineManager:
             root_paths=root_strs,
             algo=selected_algo,
             signature=signature,
-            files=manifest_files
+            files=manifest_files,
+            skipped=skipped_files
         )
 
     def load_baseline(self, name: str, verify: bool = True) -> BaselineManifest:
@@ -247,7 +276,9 @@ class BaselineManager:
                 gid=f.get("gid", 0),
                 mtime=f.get("mtime", 0.0),
                 ctime=f.get("ctime", 0.0),
-                inode=f.get("inode", 0)
+                inode=f.get("inode", 0),
+                is_symlink=bool(f.get("symlink_target")),
+                symlink_target=f.get("symlink_target") or None
             )
             for f in files_data
         }

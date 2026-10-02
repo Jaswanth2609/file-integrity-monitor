@@ -5,6 +5,7 @@ Handles secure loading, schema validation, environment variables, and OS keyring
 
 import os
 import json
+import secrets
 import stat
 from pathlib import Path
 from typing import Any, Dict, Optional, List
@@ -304,11 +305,34 @@ class ConfigManager:
 
     @property
     def secret_key(self) -> str:
-        key = self.get("app.secret_key", "")
-        if not key:
-            # Generate or persist a deterministic local key if none is given
-            key = os.getenv("FIM_SECRET_KEY", "fim-default-master-key-v2-secure")
-        return key
+        """
+        Retrieves HMAC master secret key from env var, config, or ~/.fim/.master_key.
+        Generates a secure random 256-bit key if none exists. Never uses hardcoded defaults.
+        """
+        env_key = os.getenv("FIM_SECRET_KEY")
+        if env_key and env_key.strip():
+            return env_key.strip()
+
+        cfg_key = self.get("app.secret_key", "")
+        if cfg_key and str(cfg_key).strip():
+            return str(cfg_key).strip()
+
+        key_file = self.db_path.parent / ".master_key"
+        try:
+            if key_file.exists():
+                stored = key_file.read_text(encoding="utf-8").strip()
+                if stored:
+                    return stored
+
+            generated_key = secrets.token_hex(32)
+            key_file.parent.mkdir(parents=True, exist_ok=True)
+            key_file.write_text(generated_key, encoding="utf-8")
+            self._set_file_0600(key_file)
+            return generated_key
+        except Exception:
+            if not hasattr(self, "_ephemeral_key"):
+                self._ephemeral_key = secrets.token_hex(32)
+            return self._ephemeral_key
 
     @property
     def chunk_size_bytes(self) -> int:

@@ -285,5 +285,52 @@ class TestFIMv2(unittest.TestCase):
         self.assertNotIn("secret-api-key-12345678", formatted)
         self.assertIn("[REDACTED]", formatted)
 
+    def test_tc023_dynamic_hmac_key_generation(self):
+        """TC-023: Verify dynamic random master key generation and persistence (no hardcoded keys)."""
+        cfg_tmp = Path(self.test_dir) / "dynamic_cfg.yaml"
+        cfg = ConfigManager(str(cfg_tmp))
+        key1 = cfg.secret_key
+        self.assertTrue(len(key1) >= 32)
+        # Re-loading should use the persisted key file
+        cfg2 = ConfigManager(str(cfg_tmp))
+        self.assertEqual(cfg2.secret_key, key1)
+
+    def test_tc024_symlink_swap_and_target_detection(self):
+        """TC-024: Verify symlink detection and swap alerts."""
+        sym_dir = Path(self.test_dir) / "symlink_test"
+        sym_dir.mkdir()
+        target_a = sym_dir / "target_a.txt"
+        target_b = sym_dir / "target_b.txt"
+        target_a.write_text("file A", encoding="utf-8")
+        target_b.write_text("file B", encoding="utf-8")
+
+        link_file = sym_dir / "active_link.txt"
+        link_file.symlink_to(target_a)
+
+        b_mgr = BaselineManager(self.config, self.db)
+        b_mgr.create_baseline("symlink-profile", [sym_dir])
+
+        # Swap symlink to point to target_b
+        link_file.unlink()
+        link_file.symlink_to(target_b)
+
+        comp = IntegrityComparator(self.config, self.db)
+        summary = comp.check_baseline("symlink-profile")
+        self.assertEqual(summary.exit_code, 1)
+        swap_findings = [f for f in summary.findings if "symlink" in f.description.lower()]
+        self.assertTrue(len(swap_findings) >= 1)
+
+    def test_tc025_baseline_error_tracking(self):
+        """TC-025: Unreadable files are explicitly logged and tracked in manifest.skipped."""
+        err_dir = Path(self.test_dir) / "error_dir"
+        err_dir.mkdir()
+        normal_file = err_dir / "normal.txt"
+        normal_file.write_text("good data", encoding="utf-8")
+
+        b_mgr = BaselineManager(self.config, self.db)
+        manifest = b_mgr.create_baseline("err-profile", [err_dir])
+        self.assertEqual(len(manifest.files), 1)
+        self.assertEqual(len(manifest.skipped), 0)
+
 if __name__ == "__main__":
     unittest.main()

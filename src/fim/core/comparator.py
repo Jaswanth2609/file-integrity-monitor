@@ -4,6 +4,7 @@ Compares current filesystem state against trusted baseline snapshots.
 Detects ADDED, MODIFIED, DELETED, PERMISSION_CHANGED, OWNER_CHANGED, and RENAMED events.
 """
 
+import hashlib
 import os
 import stat
 import time
@@ -132,19 +133,23 @@ class IntegrityComparator:
 
         # 3. Hash current files and inspect for modifications / permission changes
         total_live = len(current_files_list)
+        follow_symlinks = bool(self.config.get("hashing.follow_symlinks", False))
         for idx, (path_str, fp) in enumerate(current_files_map.items(), 1):
             if progress_callback:
                 progress_callback(idx, total_live, path_str)
 
             try:
-                st = fp.stat()
-                # Detect symlink anomalies if symlink following is disabled
-                if fp.is_symlink() and not self.config.get("hashing.follow_symlinks", False):
-                    # Check symlink target
-                    pass
+                is_link = os.path.islink(fp)
+                link_target = os.readlink(fp) if is_link else None
 
-                h_dict = self.hasher.calculate_hashes(fp, algorithms=[baseline.algo])
-                curr_hash = h_dict.get(baseline.algo, "")
+                if is_link and not follow_symlinks:
+                    st = os.lstat(fp)
+                    curr_hash = hashlib.sha256(f"SYMLINK:{link_target}".encode("utf-8")).hexdigest()
+                else:
+                    st = fp.stat()
+                    h_dict = self.hasher.calculate_hashes(fp, algorithms=[baseline.algo])
+                    curr_hash = h_dict.get(baseline.algo, "")
+
                 current_hashes[path_str] = curr_hash
                 hash_to_curr_paths.setdefault(curr_hash, []).append(path_str)
 
@@ -152,8 +157,37 @@ class IntegrityComparator:
                 if path_str in baseline_files:
                     b_entry = baseline_files[path_str]
                     
+                    # Symlink type or target check
+                    if is_link != getattr(b_entry, "is_symlink", False):
+                        sev = Severity.CRITICAL
+                        desc = "File type changed to symlink (potential symlink swap / TOCTOU exploit)" if is_link else "Symlink replaced with regular file"
+                        findings.append(Finding(
+                            path=path_str,
+                            change_type=ChangeType.MODIFIED,
+                            severity=sev,
+                            description=desc,
+                            old_hash=b_entry.hash,
+                            new_hash=curr_hash,
+                            attack_id="T1036",
+                            old_mode=b_entry.mode,
+                            new_mode=st.st_mode,
+                            details={"symlink_swap": True, "target": link_target}
+                        ))
+                    elif is_link and link_target != getattr(b_entry, "symlink_target", None):
+                        sev = Severity.HIGH
+                        desc = f"Symlink target redirected: '{getattr(b_entry, 'symlink_target', None)}' -> '{link_target}'"
+                        findings.append(Finding(
+                            path=path_str,
+                            change_type=ChangeType.MODIFIED,
+                            severity=sev,
+                            description=desc,
+                            old_hash=b_entry.hash,
+                            new_hash=curr_hash,
+                            attack_id="T1036",
+                            details={"old_target": getattr(b_entry, "symlink_target", None), "new_target": link_target}
+                        ))
                     # Content check
-                    if curr_hash != b_entry.hash:
+                    elif curr_hash != b_entry.hash:
                         sev, attack_id, desc = RuleEngine.classify_change(
                             path_str, ChangeType.MODIFIED, is_executable=bool(st.st_mode & 0o111)
                         )
