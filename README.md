@@ -8,7 +8,7 @@ A lightweight, enterprise-grade **File Integrity Monitor (FIM)** and threat inte
 
 ---
 
-## ⚡ Quick Start in 3 Steps
+## Quick Start in 3 Steps
 
 ### 1. Create a Baseline
 Take a cryptographically signed snapshot (HMAC-SHA256) of your target folder:
@@ -34,7 +34,7 @@ Open **[http://127.0.0.1:8000](http://127.0.0.1:8000)** in your browser for real
 
 ---
 
-## 🖥️ Interactive Terminal Menu
+## Interactive Terminal Menu
 
 If you prefer a guided terminal UI without typing arguments, simply run:
 ```bash
@@ -43,7 +43,7 @@ python3 main.py
 
 ---
 
-## 🛡️ Core Capabilities
+## Core Capabilities
 
 | Feature | Description |
 |---|---|
@@ -57,7 +57,7 @@ python3 main.py
 
 ---
 
-## ⚙️ Configuration & Secrets
+## Configuration & Secrets
 
 Set your optional VirusTotal API key or HMAC signing key via environment variables:
 ```bash
@@ -67,7 +67,7 @@ export FIM_SECRET_KEY="your_custom_signing_key"
 
 ---
 
-## 🧪 Running Tests
+## Running Tests
 
 ```bash
 python3 -m unittest discover tests
@@ -75,7 +75,7 @@ python3 -m unittest discover tests
 
 ---
 
-## 📄 License
+## License
 Licensed under GNU General Public License v3.0 (GPL-3.0). See [LICENSE](LICENSE) for details.
 
 **Maintainer**: [Jaswanth (Jaswanth2609)](https://github.com/Jaswanth2609/file-integrity-monitor)
