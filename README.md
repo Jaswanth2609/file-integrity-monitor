@@ -1,8 +1,8 @@
-<<<<<<< HEAD
+
 # File Integrity Monitor (FIM) v2.1.0
 =======
 # File Integrity Monitor (FIM) v2.1.0
->>>>>>> eb38af7 (release: v2.1.0 - security advisories, key rotation, symlink defense, and non-blocking server)
+ (release: v2.1.0 - security advisories, key rotation, symlink defense, and non-blocking server)
 
 [![Python Version](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
