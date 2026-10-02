@@ -110,7 +110,8 @@ class IntegrityComparator:
     def check_baseline(
         self,
         profile_name: str = "default",
-        progress_callback: Optional[Any] = None
+        progress_callback: Optional[Any] = None,
+        accept_migration: bool = False
     ) -> VerificationSummary:
         """
         Executes a full verification check against the named baseline.
@@ -120,7 +121,7 @@ class IntegrityComparator:
         run_id = self.db.start_scan_run(profile=profile_name)
 
         # 1. Load and cryptographically verify baseline signature (tamper check)
-        baseline = self.baseline_mgr.load_baseline(profile_name, verify=True)
+        baseline = self.baseline_mgr.load_baseline(profile_name, verify=True, accept_migration=accept_migration)
         baseline_files = baseline.files
 
         # 2. Collect current live files from baseline root paths

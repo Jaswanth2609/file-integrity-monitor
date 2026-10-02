@@ -19,6 +19,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple, Union
 from .hasher import HashEngine
 from ..config import ConfigManager
 from ..errors import BaselineTamperedError, FileNotFoundError_
+from ..storage.audit_chain import AuditChain
 from ..storage.db import DatabaseManager
 
 logger = logging.getLogger("fim.baseline")
@@ -263,10 +264,15 @@ class BaselineManager:
             skipped=skipped_files
         )
 
-    def load_baseline(self, name: str, verify: bool = True) -> BaselineManifest:
+    def load_baseline(
+        self,
+        name: str,
+        verify: bool = True,
+        accept_migration: bool = False
+    ) -> BaselineManifest:
         """
         Loads a baseline by name and verifies HMAC signature against tampering.
-        Handles key rotation migrations seamlessly.
+        Requires explicit accept_migration=True or 'fim baseline migrate' on legacy key detection.
         """
         raw = self.db.get_baseline(name)
         if not raw:
@@ -285,18 +291,32 @@ class BaselineManager:
                 if hmac.compare_digest(recorded_sig, legacy_sig):
                     valid = True
 
-            # Check previous static key rotation (migrate to new random master key)
+            # Check if signature matches the authentic legacy master key
             if not valid:
                 old_key_sig = self._calculate_hmac_signature(
                     files_data, secret_key="fim-default-master-key-v2-secure", legacy_format=True
                 )
                 if hmac.compare_digest(recorded_sig, old_key_sig):
-                    valid = True
-                    # Re-sign with current secure key
-                    new_sig = self._calculate_hmac_signature(files_data)
-                    with self.db.get_connection() as conn:
-                        conn.execute("UPDATE baselines SET signature = ? WHERE id = ?", (new_sig, raw["id"]))
-                    recorded_sig = new_sig
+                    if accept_migration:
+                        # User explicitly opted into key migration
+                        new_sig = self._calculate_hmac_signature(files_data)
+                        with self.db.get_connection() as conn:
+                            conn.execute("UPDATE baselines SET signature = ? WHERE id = ?", (new_sig, raw["id"]))
+                            chain = AuditChain(conn)
+                            chain.append_event("BASELINE_MIGRATED", {
+                                "name": name,
+                                "old_sig": recorded_sig,
+                                "new_sig": new_sig,
+                                "method": "explicit_flag"
+                            })
+                        recorded_sig = new_sig
+                        valid = True
+                    else:
+                        raise BaselineTamperedError(
+                            f"Baseline '{name}' was signed with a legacy/rotated master key. "
+                            f"To explicitly verify and migrate this baseline to the new secure master key, run: "
+                            f"'fim baseline migrate {name}' or 'fim check --profile {name} --accept-migration'"
+                        )
 
             if not valid:
                 raise BaselineTamperedError(
@@ -361,3 +381,43 @@ class BaselineManager:
             "deleted": deleted,
             "modified": modified
         }
+
+    def migrate_baseline(self, name: str) -> bool:
+        """
+        Explicitly migrates and re-signs a legacy baseline with the current secure random master key.
+        """
+        raw = self.db.get_baseline(name)
+        if not raw:
+            raise FileNotFoundError_(f"Baseline profile '{name}' not found in database.")
+
+        files_data = raw["files"]
+        recorded_sig = raw["signature"]
+
+        # Check if already signed with current key
+        current_sig = self._calculate_hmac_signature(files_data)
+        if hmac.compare_digest(recorded_sig, current_sig):
+            logger.info(f"Baseline '{name}' is already up to date.")
+            return True
+
+        # Check if authentic legacy key matches
+        legacy_sig = self._calculate_hmac_signature(
+            files_data, secret_key="fim-default-master-key-v2-secure", legacy_format=True
+        )
+        if not hmac.compare_digest(recorded_sig, legacy_sig):
+            legacy_new_fmt = self._calculate_hmac_signature(files_data, legacy_format=True)
+            if not hmac.compare_digest(recorded_sig, legacy_new_fmt):
+                raise BaselineTamperedError(
+                    f"Cannot migrate baseline '{name}': signature does not match authentic legacy master key either. Possible unauthorized tampering!"
+                )
+
+        # Re-sign with current key
+        with self.db.get_connection() as conn:
+            conn.execute("UPDATE baselines SET signature = ? WHERE id = ?", (current_sig, raw["id"]))
+            chain = AuditChain(conn)
+            chain.append_event("BASELINE_MIGRATED", {
+                "name": name,
+                "old_sig": recorded_sig,
+                "new_sig": current_sig,
+                "action": "explicit_migrate"
+            })
+        return True

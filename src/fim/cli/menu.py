@@ -188,6 +188,28 @@ class InteractiveMenu:
                     sev_color = Colors.RED if f.severity in ("CRITICAL", "HIGH") else Colors.WARNING
                     print(f"  {sev_color}[{f.severity}] {f.change_type}: {f.path}{Colors.RESET}")
                     print(f"      {f.description}")
+        except BaselineTamperedError as e:
+            if "legacy/rotated master key" in str(e):
+                print(f"\n{Colors.WARNING}[!] {e}{Colors.RESET}")
+                choice = input(f"\n{Colors.BOLD}Would you like to migrate this baseline to the new secure key now? [y/N]: {Colors.RESET}").strip().lower()
+                if choice == "y":
+                    try:
+                        self.baseline_mgr.migrate_baseline(profile)
+                        print(f"\n{Colors.GREEN}[✓] Baseline '{profile}' successfully migrated! Re-verifying...{Colors.RESET}\n")
+                        summary = self.comparator.check_baseline(profile_name=profile)
+                        print(f"Checked {summary.current_files_scanned} live files against {summary.total_baseline_files} baseline files in {summary.finished_at - summary.started_at:.2f}s.")
+                        if not summary.has_changes:
+                            print(f"{Colors.GREEN}[✓] Clean! No unauthorized changes detected.{Colors.RESET}")
+                        else:
+                            print(f"{Colors.RED}[!] ALERT: {len(summary.findings)} changes detected!{Colors.RESET}\n")
+                            for f in summary.findings:
+                                sev_color = Colors.RED if f.severity in ("CRITICAL", "HIGH") else Colors.WARNING
+                                print(f"  {sev_color}[{f.severity}] {f.change_type}: {f.path}{Colors.RESET}")
+                                print(f"      {f.description}")
+                    except Exception as me:
+                        print(f"\n{Colors.RED}[!] Migration failed: {me}{Colors.RESET}")
+            else:
+                print(f"\n{Colors.RED}[!] Verification failed: {e}{Colors.RESET}")
         except Exception as e:
             print(f"\n{Colors.RED}[!] Verification failed: {e}{Colors.RESET}")
 

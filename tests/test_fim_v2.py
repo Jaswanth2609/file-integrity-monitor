@@ -332,5 +332,62 @@ class TestFIMv2(unittest.TestCase):
         self.assertEqual(len(manifest.files), 1)
         self.assertEqual(len(manifest.skipped), 0)
 
+    def test_tc026_explicit_baseline_migration(self):
+        """TC-026: Baselines signed with legacy key require explicit migration."""
+        mig_dir = Path(self.test_dir) / "mig_dir"
+        mig_dir.mkdir()
+        test_file = mig_dir / "file.txt"
+        test_file.write_text("migration test", encoding="utf-8")
+
+        # Create baseline initially with legacy key
+        legacy_key = "fim-default-master-key-v2-secure"
+        b_mgr = BaselineManager(self.config, self.db)
+        manifest = b_mgr.create_baseline("legacy-profile", [mig_dir])
+
+        # Manually tamper signature to be signed with legacy key in legacy format
+        files_data = self.db.get_baseline("legacy-profile")["files"]
+        legacy_sig = b_mgr._calculate_hmac_signature(files_data, secret_key=legacy_key, legacy_format=True)
+        with self.db.get_connection() as conn:
+            conn.execute("UPDATE baselines SET signature = ? WHERE name = 'legacy-profile'", (legacy_sig,))
+
+        # Verify that normal load fails with BaselineTamperedError pointing to migration
+        with self.assertRaises(BaselineTamperedError) as ctx:
+            b_mgr.load_baseline("legacy-profile", verify=True, accept_migration=False)
+        self.assertIn("fim baseline migrate legacy-profile", str(ctx.exception))
+
+        # Explicitly migrate
+        ok = b_mgr.migrate_baseline("legacy-profile")
+        self.assertTrue(ok)
+
+        # Verify that normal load now succeeds without accept_migration flag
+        loaded = b_mgr.load_baseline("legacy-profile", verify=True, accept_migration=False)
+        self.assertEqual(loaded.name, "legacy-profile")
+
+    def test_tc027_check_with_accept_migration(self):
+        """TC-027: fim check with accept_migration=True re-signs and validates baseline."""
+        check_dir = Path(self.test_dir) / "check_mig_dir"
+        check_dir.mkdir()
+        test_file = check_dir / "check_file.txt"
+        test_file.write_text("check mig test", encoding="utf-8")
+
+        legacy_key = "fim-default-master-key-v2-secure"
+        b_mgr = BaselineManager(self.config, self.db)
+        b_mgr.create_baseline("flag-profile", [check_dir])
+
+        files_data = self.db.get_baseline("flag-profile")["files"]
+        legacy_sig = b_mgr._calculate_hmac_signature(files_data, secret_key=legacy_key, legacy_format=True)
+        with self.db.get_connection() as conn:
+            conn.execute("UPDATE baselines SET signature = ? WHERE name = 'flag-profile'", (legacy_sig,))
+
+        comp = IntegrityComparator(self.config, self.db)
+        # Without flag, check fails
+        with self.assertRaises(BaselineTamperedError):
+            comp.check_baseline("flag-profile", accept_migration=False)
+
+        # With flag, check succeeds and migrates
+        summary = comp.check_baseline("flag-profile", accept_migration=True)
+        self.assertEqual(summary.exit_code, 0)
+        self.assertEqual(summary.current_files_scanned, 1)
+
 if __name__ == "__main__":
     unittest.main()

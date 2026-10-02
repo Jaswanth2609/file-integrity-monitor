@@ -91,6 +91,13 @@ class DatabaseManager:
             conn.execute("CREATE INDEX IF NOT EXISTS idx_bf_base_path ON baseline_files(baseline_id, path)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_bf_hash ON baseline_files(hash)")
 
+            # Auto-migrate columns for existing databases
+            cursor = conn.cursor()
+            cursor.execute("PRAGMA table_info(baseline_files)")
+            bf_cols = [row["name"] for row in cursor.fetchall()]
+            if bf_cols and "symlink_target" not in bf_cols:
+                conn.execute("ALTER TABLE baseline_files ADD COLUMN symlink_target TEXT DEFAULT ''")
+
             # Scan runs table
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS scan_runs (

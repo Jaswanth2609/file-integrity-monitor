@@ -51,10 +51,15 @@ def create_parser() -> argparse.ArgumentParser:
     p_base_diff.add_argument("base_a", help="First baseline profile name")
     p_base_diff.add_argument("base_b", help="Second baseline profile name")
 
+    # baseline migrate
+    p_base_migrate = base_sub.add_parser("migrate", help="Explicitly migrate and re-sign baseline with current master key")
+    p_base_migrate.add_argument("name", nargs="?", default="default", help="Baseline profile name (default: default)")
+
     # Subcommand: check
     check_parser = subparsers.add_parser("check", help="Verify filesystem integrity against baseline")
     check_parser.add_argument("--profile", "-p", default="default", help="Baseline profile name (default: default)")
     check_parser.add_argument("--format", "-f", choices=["table", "json"], default="table", help="Output format")
+    check_parser.add_argument("--accept-migration", action="store_true", help="Explicitly accept legacy key migration and re-sign baseline")
     check_parser.add_argument("--export-html", help="Export HTML report to file")
     check_parser.add_argument("--export-json", help="Export JSON report to file")
     check_parser.add_argument("--export-csv", help="Export CSV report to file")
@@ -171,6 +176,16 @@ def main_cli(args_list: Optional[List[str]] = None) -> int:
             res = b_mgr.diff_baselines(args.base_a, args.base_b)
             print(json.dumps(res, indent=2))
             return 0
+        elif action == "migrate":
+            profile = args.name or "default"
+            try:
+                ok = b_mgr.migrate_baseline(profile)
+                if ok:
+                    print(f"\n{Colors.GREEN}[✓] Baseline '{profile}' successfully migrated and re-signed with current master key!{Colors.RESET}")
+                    return 0
+            except Exception as e:
+                print(f"\n{Colors.RED}[!] Migration failed: {e}{Colors.RESET}", file=sys.stderr)
+                return 2
         else:
             parser.print_help()
             return 0
@@ -178,7 +193,7 @@ def main_cli(args_list: Optional[List[str]] = None) -> int:
     elif cmd == "check":
         comp = IntegrityComparator(config, db)
         try:
-            summary = comp.check_baseline(profile_name=args.profile)
+            summary = comp.check_baseline(profile_name=args.profile, accept_migration=args.accept_migration)
         except BaselineTamperedError as e:
             print(f"{Colors.RED}[CRITICAL ERROR 2] {e}{Colors.RESET}", file=sys.stderr)
             return 2
