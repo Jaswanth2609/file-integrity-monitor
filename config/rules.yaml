@@ -1,0 +1,81 @@
+# File Integrity Monitor (FIM) v2.1 - Detection & Severity Rules
+# This file defines severity scoring, MITRE ATT&CK mappings, and path classifications.
+# Customize patterns, severity levels, and MITRE tactics to match your organization's threat model.
+
+critical_system_paths:
+  - "/etc"
+  - "/bin"
+  - "/sbin"
+  - "/usr/bin"
+  - "/usr/sbin"
+  - "/lib"
+  - "/lib64"
+  - "/boot"
+  - "/usr/local/bin"
+  - "/usr/local/sbin"
+  - "C:\\Windows\\System32"
+  - "C:\\Windows\\SysWOW64"
+  - "C:\\Program Files"
+
+executable_extensions:
+  - ".exe"
+  - ".dll"
+  - ".so"
+  - ".bin"
+  - ".sh"
+  - ".bash"
+  - ".py"
+  - ".ps1"
+  - ".vbs"
+  - ".bat"
+  - ".cmd"
+  - ".elf"
+  - ".js"
+
+web_extensions:
+  - ".php"
+  - ".jsp"
+  - ".asp"
+  - ".aspx"
+  - ".html"
+  - ".phtml"
+  - ".cgi"
+
+config_extensions:
+  - ".conf"
+  - ".cfg"
+  - ".yaml"
+  - ".yml"
+  - ".json"
+  - ".ini"
+  - ".env"
+  - ".toml"
+
+custom_rules:
+  - name: "Shadow or Passwd Tampering"
+    path_pattern: "*/etc/shadow|*/etc/passwd|*/etc/gshadow|*/etc/sudoers*"
+    change_type: "ANY"
+    severity: "CRITICAL"
+    attack_id: "T1565"
+    description: "Critical authentication or authorization credential database modified"
+
+  - name: "SSH Authorized Keys Manipulation"
+    path_pattern: "*/.ssh/authorized_keys*|*/.ssh/id_*"
+    change_type: "ANY"
+    severity: "CRITICAL"
+    attack_id: "T1098.004"
+    description: "SSH keys or authorized_keys altered (potential persistence/backdoor)"
+
+  - name: "Cron and Systemd Persistence"
+    path_pattern: "*/etc/cron*|*/etc/systemd/system/*|*/lib/systemd/system/*"
+    change_type: "ANY"
+    severity: "HIGH"
+    attack_id: "T1053.003"
+    description: "System service or scheduled task modified (persistence attempt)"
+
+  - name: "Web Root Executable Addition"
+    path_pattern: "*/var/www/*|*/usr/share/nginx/*|*/htdocs/*"
+    change_type: "ADDED"
+    severity: "HIGH"
+    attack_id: "T1505.003"
+    description: "New file placed in web server root directory"

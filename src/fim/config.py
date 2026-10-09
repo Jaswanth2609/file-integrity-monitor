@@ -19,7 +19,7 @@ except ImportError:
 from .errors import ConfigurationError
 
 DEFAULT_CONFIG: Dict[str, Any] = {
-    "version": "2.0.0",
+    "version": "2.1.0",
     "app": {
         "name": "File Integrity Monitor",
         "secret_key": "",  # Used for HMAC-SHA256 baseline signing if not in keyring/env
@@ -27,6 +27,11 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "log_file": "~/.fim/fim.log",
         "log_json": False,
         "auto_secure_permissions": True
+    },
+    "signing": {
+        "type": "hmac",  # "hmac" or "ed25519"
+        "private_key_path": "~/.fim/fim_ed25519",
+        "public_key_path": "~/.fim/fim_ed25519.pub"
     },
     "hashing": {
         "default_algorithm": "sha256",
@@ -307,15 +312,25 @@ class ConfigManager:
     def secret_key(self) -> str:
         """
         Retrieves HMAC master secret key from env var, config, or ~/.fim/.master_key.
-        Generates a secure random 256-bit key if none exists. Never uses hardcoded defaults.
+        Generates a secure random 256-bit key if none exists. Enforces minimum entropy requirements.
         """
+        from .crypto.entropy import validate_secret_entropy
+
         env_key = os.getenv("FIM_SECRET_KEY")
         if env_key and env_key.strip():
-            return env_key.strip()
+            k = env_key.strip()
+            ok, msg = validate_secret_entropy(k, min_length=16, min_entropy=2.5)
+            if not ok:
+                raise ValueError(f"FIM_SECRET_KEY failed entropy/security validation: {msg}")
+            return k
 
         cfg_key = self.get("app.secret_key", "")
         if cfg_key and str(cfg_key).strip():
-            return str(cfg_key).strip()
+            k = str(cfg_key).strip()
+            ok, msg = validate_secret_entropy(k, min_length=16, min_entropy=2.5)
+            if not ok:
+                raise ValueError(f"app.secret_key failed entropy/security validation: {msg}")
+            return k
 
         key_file = self.db_path.parent / ".master_key"
         try:

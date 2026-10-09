@@ -1,7 +1,8 @@
 """
 Baseline Management Engine for FIM v2.1.
-Handles baseline creation, cryptographic HMAC-SHA256 signing, tamper verification,
-named profiles, glob filtering, diffing, symlink resolution, key migration, and baseline acceptance.
+Handles baseline creation, cryptographic HMAC-SHA256 and Ed25519 asymmetric signing,
+tamper verification, named profiles, glob filtering, .fimignore support, diffing,
+symlink resolution, key migration, and baseline acceptance.
 """
 
 import fnmatch
@@ -18,6 +19,8 @@ from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 from .hasher import HashEngine
 from ..config import ConfigManager
+from ..crypto.asymmetric import AsymmetricEngine
+from ..crypto.entropy import load_secure_key_file
 from ..errors import BaselineTamperedError, FileNotFoundError_
 from ..storage.audit_chain import AuditChain
 from ..storage.db import DatabaseManager
@@ -61,8 +64,8 @@ class BaselineManifest:
     algo: str
     signature: str
     files: Dict[str, BaselineEntry] = field(default_factory=dict)
+    version: int = 2
     skipped: List[Dict[str, str]] = field(default_factory=list)
-    version: int = 1
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -73,12 +76,12 @@ class BaselineManifest:
             "signature": self.signature,
             "version": self.version,
             "file_count": len(self.files),
-            "skipped_count": len(self.skipped),
-            "skipped": self.skipped
+            "skipped": self.skipped,
+            "files": {p: entry.to_dict() for p, entry in self.files.items()}
         }
 
 class BaselineManager:
-    """Manages creation, signing, verification, and inspection of file baselines."""
+    """Manages creation, loading, signing, verification, and diffing of baseline profiles."""
 
     def __init__(self, config: Optional[ConfigManager] = None, db: Optional[DatabaseManager] = None):
         self.config = config or ConfigManager()
@@ -89,16 +92,7 @@ class BaselineManager:
             max_workers=int(self.config.get("hashing.max_workers", 4))
         )
 
-    def _calculate_hmac_signature(
-        self,
-        files: List[Dict[str, Any]],
-        secret_key: Optional[str] = None,
-        legacy_format: bool = False
-    ) -> str:
-        """
-        Calculates HMAC-SHA256 signature across all canonical sorted file records.
-        """
-        key = (secret_key or self.config.secret_key).encode("utf-8")
+    def _get_canonical_bytes(self, files: List[Dict[str, Any]], legacy_format: bool = False) -> bytes:
         sorted_files = sorted(files, key=lambda x: x["path"])
         payload_parts = []
         for f in sorted_files:
@@ -116,9 +110,49 @@ class BaselineManager:
                     payload_parts.append(
                         f"{f['path']}:{f['hash']}:{f.get('size', 0)}:{f.get('mode', 0)}:{f.get('mtime', 0.0)}"
                     )
-        
-        canonical_str = "\n".join(payload_parts).encode("utf-8")
-        return hmac.new(key, canonical_str, hashlib.sha256).hexdigest()
+        return "\n".join(payload_parts).encode("utf-8")
+
+    def _calculate_signature(
+        self,
+        files: List[Dict[str, Any]],
+        signing_type: str = "hmac",
+        secret_key: Optional[str] = None,
+        private_key_path: Optional[Union[str, Path]] = None,
+        legacy_format: bool = False
+    ) -> str:
+        """
+        Calculates signature (Ed25519 asymmetric or HMAC-SHA256) across sorted canonical records.
+        """
+        canonical_bytes = self._get_canonical_bytes(files, legacy_format=legacy_format)
+        if (signing_type == "ed25519" or private_key_path) and AsymmetricEngine.is_available():
+            priv_p = private_key_path or self.config.get("signing.private_key_path") or Path("~/.fim/fim_ed25519").expanduser()
+            sig_hex = AsymmetricEngine.sign_payload(canonical_bytes, priv_p)
+            return f"ed25519:{sig_hex}"
+        else:
+            key = (secret_key or self.config.secret_key).encode("utf-8")
+            return hmac.new(key, canonical_bytes, hashlib.sha256).hexdigest()
+
+    def _calculate_hmac_signature(
+        self,
+        files: List[Dict[str, Any]],
+        secret_key: Optional[str] = None,
+        legacy_format: bool = False
+    ) -> str:
+        return self._calculate_signature(files, signing_type="hmac", secret_key=secret_key, legacy_format=legacy_format)
+
+    def _load_fimignore(self, root_dir: Path) -> List[str]:
+        """Loads glob ignore patterns from .fimignore if present in root_dir."""
+        patterns = []
+        ignore_path = root_dir / ".fimignore"
+        if ignore_path.exists() and ignore_path.is_file():
+            try:
+                for line in ignore_path.read_text(encoding="utf-8").splitlines():
+                    line = line.strip()
+                    if line and not line.startswith("#"):
+                        patterns.append(line)
+            except Exception as e:
+                logger.debug(f"Could not read .fimignore at {ignore_path}: {e}")
+        return patterns
 
     def _should_exclude(self, path: Path, exclude_patterns: List[str], include_patterns: List[str]) -> bool:
         """Determines if a path matches glob exclusion or inclusion filters."""
@@ -144,8 +178,8 @@ class BaselineManager:
         exclude_patterns: Optional[List[str]] = None,
         include_patterns: Optional[List[str]] = None
     ) -> List[Path]:
-        """Gathers all files from target directories respecting glob exclusions."""
-        excludes = exclude_patterns if exclude_patterns is not None else self.config.get("baseline.exclude_patterns", [])
+        """Gathers all files from target directories respecting .fimignore and glob exclusions."""
+        base_excludes = list(exclude_patterns if exclude_patterns is not None else self.config.get("baseline.exclude_patterns", []))
         includes = include_patterns if include_patterns is not None else self.config.get("baseline.include_patterns", ["*"])
 
         collected: Set[Path] = set()
@@ -154,16 +188,23 @@ class BaselineManager:
             rp = Path(root).expanduser().resolve()
             if not rp.exists():
                 continue
+
+            fimignore_excludes = self._load_fimignore(rp if rp.is_dir() else rp.parent)
+            current_excludes = base_excludes + fimignore_excludes
+
             if rp.is_file() or os.path.islink(rp):
-                if not self._should_exclude(rp, excludes, includes):
+                if not self._should_exclude(rp, current_excludes, includes):
                     collected.add(rp)
             elif rp.is_dir():
                 for root_dir, dirs, files in os.walk(rp, followlinks=bool(self.config.get("hashing.follow_symlinks", False))):
                     current_dir_p = Path(root_dir)
-                    dirs[:] = [d for d in dirs if not self._should_exclude(current_dir_p / d, excludes, includes)]
+                    dir_fimignore = self._load_fimignore(current_dir_p)
+                    active_excludes = current_excludes + dir_fimignore
+
+                    dirs[:] = [d for d in dirs if not self._should_exclude(current_dir_p / d, active_excludes, includes)]
                     for fname in files:
                         fp = current_dir_p / fname
-                        if not self._should_exclude(fp, excludes, includes):
+                        if not self._should_exclude(fp, active_excludes, includes):
                             collected.add(fp)
 
         return sorted(list(collected))
@@ -175,7 +216,9 @@ class BaselineManager:
         algo: Optional[str] = None,
         exclude_patterns: Optional[List[str]] = None,
         include_patterns: Optional[List[str]] = None,
-        progress_callback: Optional[Any] = None
+        progress_callback: Optional[Any] = None,
+        signing_type: str = "hmac",
+        private_key_path: Optional[Union[str, Path]] = None
     ) -> BaselineManifest:
         """
         Generates a new signed baseline for given paths and saves to database.
@@ -225,7 +268,11 @@ class BaselineManager:
                 if progress_callback:
                     progress_callback(idx, total, f"[SKIPPED] {fp}")
 
-        signature = self._calculate_hmac_signature(file_entries)
+        signature = self._calculate_signature(
+            file_entries,
+            signing_type=signing_type,
+            private_key_path=private_key_path
+        )
         root_strs = [str(Path(p).expanduser().resolve()) for p in paths]
 
         # Persist in DB
@@ -268,10 +315,11 @@ class BaselineManager:
         self,
         name: str,
         verify: bool = True,
-        accept_migration: bool = False
+        accept_migration: bool = False,
+        public_key_path: Optional[Union[str, Path]] = None
     ) -> BaselineManifest:
         """
-        Loads a baseline by name and verifies HMAC signature against tampering.
+        Loads a baseline by name and verifies signature (HMAC or Ed25519) against tampering.
         Requires explicit accept_migration=True or 'fim baseline migrate' on legacy key detection.
         """
         raw = self.db.get_baseline(name)
@@ -282,46 +330,59 @@ class BaselineManager:
         recorded_sig = raw["signature"]
 
         if verify and self.config.get("baseline.sign_baselines", True):
-            recomputed = self._calculate_hmac_signature(files_data)
-            valid = hmac.compare_digest(recorded_sig, recomputed)
+            if recorded_sig.startswith("ed25519:"):
+                # Asymmetric Ed25519 verification
+                sig_hex = recorded_sig.split(":", 1)[1]
+                pub_p = public_key_path or self.config.get("signing.public_key_path") or Path("~/.fim/fim_ed25519.pub").expanduser()
+                canonical_bytes = self._get_canonical_bytes(files_data)
+                valid = AsymmetricEngine.verify_payload(canonical_bytes, sig_hex, pub_p)
+                if not valid:
+                    raise BaselineTamperedError(
+                        f"Baseline '{name}' Ed25519 asymmetric signature verification failed! "
+                        f"Possible unauthorized database tampering or incorrect public key."
+                    )
+            else:
+                # Symmetric HMAC verification
+                recomputed = self._calculate_hmac_signature(files_data)
+                valid = hmac.compare_digest(recorded_sig, recomputed)
 
-            # Check legacy payload format if direct match fails
-            if not valid:
-                legacy_sig = self._calculate_hmac_signature(files_data, legacy_format=True)
-                if hmac.compare_digest(recorded_sig, legacy_sig):
-                    valid = True
-
-            # Check if signature matches the authentic legacy master key
-            if not valid:
-                old_key_sig = self._calculate_hmac_signature(
-                    files_data, secret_key="fim-default-master-key-v2-secure", legacy_format=True
-                )
-                if hmac.compare_digest(recorded_sig, old_key_sig):
-                    if accept_migration:
-                        # User explicitly opted into key migration
-                        new_sig = self._calculate_hmac_signature(files_data)
-                        with self.db.get_connection() as conn:
-                            conn.execute("UPDATE baselines SET signature = ? WHERE id = ?", (new_sig, raw["id"]))
-                            chain = AuditChain(conn)
-                            chain.append_event("BASELINE_MIGRATED", {
-                                "name": name,
-                                "old_sig": recorded_sig,
-                                "new_sig": new_sig,
-                                "method": "explicit_flag"
-                            })
-                        recorded_sig = new_sig
+                # Check legacy payload format if direct match fails
+                if not valid:
+                    legacy_sig = self._calculate_hmac_signature(files_data, legacy_format=True)
+                    if hmac.compare_digest(recorded_sig, legacy_sig):
                         valid = True
-                    else:
-                        raise BaselineTamperedError(
-                            f"Baseline '{name}' was signed with a legacy/rotated master key. "
-                            f"To explicitly verify and migrate this baseline to the new secure master key, run: "
-                            f"'fim baseline migrate {name}' or 'fim check --profile {name} --accept-migration'"
-                        )
 
-            if not valid:
-                raise BaselineTamperedError(
-                    f"Baseline '{name}' HMAC signature mismatch! Expected: {recorded_sig[:12]}..., Computed: {recomputed[:12]}..."
-                )
+                # Check if signature matches the authentic legacy master key
+                if not valid:
+                    old_key_sig = self._calculate_hmac_signature(
+                        files_data, secret_key="fim-default-master-key-v2-secure", legacy_format=True
+                    )
+                    if hmac.compare_digest(recorded_sig, old_key_sig):
+                        if accept_migration:
+                            # User explicitly opted into key migration
+                            new_sig = self._calculate_hmac_signature(files_data)
+                            with self.db.get_connection() as conn:
+                                conn.execute("UPDATE baselines SET signature = ? WHERE id = ?", (new_sig, raw["id"]))
+                                chain = AuditChain(conn)
+                                chain.append_event("BASELINE_MIGRATED", {
+                                    "name": name,
+                                    "old_sig": recorded_sig,
+                                    "new_sig": new_sig,
+                                    "method": "explicit_flag"
+                                })
+                            recorded_sig = new_sig
+                            valid = True
+                        else:
+                            raise BaselineTamperedError(
+                                f"Baseline '{name}' was signed with a legacy/rotated master key. "
+                                f"To explicitly verify and migrate this baseline to the new secure master key, run: "
+                                f"'fim baseline migrate {name}' or 'fim check --profile {name} --accept-migration'"
+                            )
+
+                if not valid:
+                    raise BaselineTamperedError(
+                        f"Baseline '{name}' HMAC signature mismatch! Expected: {recorded_sig[:12]}..., Computed: {recomputed[:12]}..."
+                    )
 
         manifest_files = {
             f["path"]: BaselineEntry(

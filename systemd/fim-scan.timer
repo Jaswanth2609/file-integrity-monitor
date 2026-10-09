@@ -1,0 +1,11 @@
+[Unit]
+Description=Run FIM Integrity Scan Hourly
+Documentation=https://github.com/Jaswanth2609/file-integrity-monitor
+
+[Timer]
+OnCalendar=hourly
+Persistent=true
+RandomizedDelaySec=120
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,22 @@
+[Unit]
+Description=File Integrity Monitor (FIM) Real-Time Watcher Daemon
+Documentation=https://github.com/Jaswanth2609/file-integrity-monitor
+After=network.target local-fs.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/fim
+ExecStart=/usr/bin/python3 main.py watch --profile default
+Restart=on-failure
+RestartSec=5s
+
+# Hardening measures
+ProtectControlGroups=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+RestrictRealtime=true
+MemoryDenyWriteExecute=true
+
+[Install]
+WantedBy=multi-user.target

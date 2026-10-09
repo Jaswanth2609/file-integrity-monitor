@@ -98,3 +98,7 @@ class AuditChain:
                 "entry_hash": r[4]
             })
         return results
+
+    def get_events(self, limit: int = 50) -> List[Dict[str, Any]]:
+        """Alias for get_recent_records."""
+        return self.get_recent_records(limit=limit)

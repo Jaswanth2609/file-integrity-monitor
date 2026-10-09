@@ -1,34 +1,85 @@
+<<<<<<< HEAD
 
 # File Integrity Monitor (FIM) v2.1.0
  (release: v2.1.0 - security advisories, key rotation, symlink defense, and non-blocking server)
+=======
+# File Integrity Monitor (FIM) v2.1.0
+>>>>>>> e3b0bf9 (feat: ed25519 asymmetric signing, chain-head anchoring, YARA scanner, and hardened dashboard)
 
 [![Python Version](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![VirusTotal API v3](https://img.shields.io/badge/VirusTotal-API%20v3-green.svg)](https://www.virustotal.com/)
+[![Threat Model](https://img.shields.io/badge/Security-Threat%20Model-red.svg)](docs/THREAT_MODEL.md)
 
-A lightweight, enterprise-grade **File Integrity Monitor (FIM)** and threat intelligence platform in Python. It detects unauthorized file modifications, tracks added/deleted files, alerts on permission tampering, and enriches changes with **VirusTotal** and **MalwareBazaar** reputation data.
+A lightweight, enterprise-grade **File Integrity Monitor (FIM)** and threat detection platform. It detects unauthorized filesystem modifications, analyzes changed files with **YARA signatures**, cross-references changes against OS package managers (`dpkg`, `rpm`, `pacman`), and supports **Asymmetric Ed25519 signing** with **external chain-head anchoring** to protect against root-level tampering.
 
 ---
 
-## Quick Start in 3 Steps
+## Supported Operating Systems
 
-### 1. Create a Baseline
-Take a cryptographically signed snapshot (HMAC-SHA256) of your target folder:
+> [!NOTE]
+> **Primary Platforms**: Linux & macOS (POSIX environments with full file permission and inode semantics).  
+> **Windows**: Fully supported via **WSL2 (Windows Subsystem for Linux)**. Direct Windows native execution is experimental due to POSIX attribute differences.
+
+---
+
+## Key Capabilities
+
+| Feature | Description |
+|---|---|
+| **Asymmetric Ed25519 Signing** | Sign baselines with private keys; monitored nodes verify using **public keys only**, preventing root-level signature forgery. |
+| **External Chain-Head Anchoring** | Cryptographically anchor the append-only SHA-256 audit ledger to external WORM media, detecting local database rewrites. |
+| **YARA Threat Inspection** | Automatically scans added and modified files against YARA rules (detecting webshells, reverse shells, and droppers). |
+| **Package Manager Integration** | Queries `dpkg`, `rpm`, and `pacman` to eliminate false positives during routine OS updates (`apt upgrade`, `dnf update`). |
+| **Symlink TOCTOU Defense** | Detects symlink replacement and redirection attacks (mapped to **MITRE ATT&CK T1036 Masquerading**). |
+| **Threat Intelligence** | Real-time hash reputation lookups via **VirusTotal API v3** and **MalwareBazaar** with rate limiting and local SQLite caching. |
+| **Dashboard & Bind Security** | Multi-threaded dashboard server refuses non-loopback binds by default and enforces Bearer token authentication. |
+| **User-Editable Rules** | Fully customizable detection and severity scoring defined in `config/rules.yaml`. |
+
+---
+
+## Quick Start Guide
+
+### 1. (Optional) Generate Ed25519 Asymmetric Keys
+Generate an Ed25519 keypair for root-tamper-resistant baseline verification:
 ```bash
-python3 main.py baseline create ./config --name config-profile
+python3 main.py keygen --out-key ~/.fim/fim_ed25519 --out-pub ~/.fim/fim_ed25519.pub
 ```
 
-### 2. Verify Integrity
-Compare live files against your baseline:
+### 2. Create a Signed Baseline
+Create a baseline snapshot of your monitored directory:
 ```bash
-# Verify integrity (Exit code: 0 = Clean, 1 = Changes Found)
-python3 main.py check --profile config-profile
+# HMAC baseline (default)
+python3 main.py baseline create ./src --name src-profile
 
-# Export styled HTML audit report
-python3 main.py check --profile config-profile --export-html reports/audit.html
+# Or Asymmetric Ed25519 baseline
+python3 main.py baseline create ./src --name src-profile --sign-type ed25519 --sign-key ~/.fim/fim_ed25519
 ```
 
-### 3. Launch Web Dashboard & REST API
+### 3. Verify File Integrity
+Verify current filesystem state against your trusted baseline:
+```bash
+# Standard check
+python3 main.py check --profile src-profile
+
+# Asymmetric check using ONLY public key (tamper-proof against root on monitored host)
+python3 main.py check --profile src-profile --pubkey ~/.fim/fim_ed25519.pub
+
+# Continuous scheduled check every 5 minutes (300 seconds)
+python3 main.py check --profile src-profile --interval 300
+```
+
+### 4. Export Chain-Head Anchor
+Export an immutable signed anchor of the cryptographic audit ledger:
+```bash
+# Export signed anchor
+python3 main.py audit anchor-export --output /mnt/secure_backup/chain_head.json --sign-key ~/.fim/fim_ed25519
+
+# Verify ledger integrity against external anchor
+python3 main.py audit anchor-verify --anchor /mnt/secure_backup/chain_head.json --pubkey ~/.fim/fim_ed25519.pub
+```
+
+### 5. Launch Web Dashboard & REST API
 ```bash
 python3 main.py serve
 ```
@@ -36,44 +87,39 @@ Open **[http://127.0.0.1:8000](http://127.0.0.1:8000)** in your browser for real
 
 ---
 
-## Interactive Terminal Menu
+## Systemd & Docker Deployment
 
-If you prefer a guided terminal UI without typing arguments, simply run:
+### Systemd Services
+Install the provided units in `/etc/systemd/system/`:
+- `systemd/fim.service`: Real-time monitoring daemon
+- `systemd/fim-scan.timer`: Periodic scheduled integrity scan timer
+
 ```bash
-python3 main.py
+sudo cp systemd/fim-scan.* /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now fim-scan.timer
 ```
 
----
-
-## Core Capabilities
-
-| Feature | Description |
-|---|---|
-| **HMAC Baseline Signing** | Uses HMAC-SHA256 signatures to prevent tampering with baseline snapshots. |
-| **Change Detection** | Detects `ADDED`, `MODIFIED`, `DELETED`, `PERMISSION_CHANGED`, `OWNER_CHANGED`, and `RENAMED` events. |
-| **MITRE ATT&CK Mapping** | Automatically scores severity (`CRITICAL` to `INFO`) and maps to MITRE techniques (`T1565`, `T1070`, `T1036`, `T1505`). |
-| **Threat Intelligence** | Queries VirusTotal API v3 & MalwareBazaar (abuse.ch) with 24h caching and token-bucket rate limiting. |
-| **Tamper-Evident Ledger** | Stores all scan events in an append-only, SHA-256 hash-chained SQLite audit log. |
-| **Multi-Channel Alerts** | Dispatches instant alerts to Console, Log Files, Slack, Telegram, Email, and Syslog. |
-| **Self-Contained** | Zero external dependencies required for core functionality; runs on standard Python 3.10+. |
-
----
-
-## Configuration & Secrets
-
-Set your optional VirusTotal API key or HMAC signing key via environment variables:
+### Docker Container
 ```bash
-export VT_API_KEY="your_virustotal_api_key_here"
-export FIM_SECRET_KEY="your_custom_signing_key"
+docker build -t fim:v2.1 .
+docker run -d -p 127.0.0.1:8000:8000 -v /etc:/monitored/etc:ro --name fim-agent fim:v2.1
 ```
 
 ---
 
 ## Running Tests
 
+Execute the comprehensive acceptance test suite (covering Ed25519, YARA, symlink defense, and anchoring):
 ```bash
 python3 -m unittest discover tests
 ```
+
+---
+
+## Security & Threat Model
+
+For an in-depth breakdown of trust boundaries, attacker capabilities, and detection guarantees, refer to [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md).
 
 ---
 

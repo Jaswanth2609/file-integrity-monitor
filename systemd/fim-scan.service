@@ -1,0 +1,10 @@
+[Unit]
+Description=File Integrity Monitor (FIM) Scheduled Integrity Scan
+Documentation=https://github.com/Jaswanth2609/file-integrity-monitor
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/fim
+ExecStart=/usr/bin/python3 main.py check --profile default
+StandardOutput=journal
+StandardError=journal

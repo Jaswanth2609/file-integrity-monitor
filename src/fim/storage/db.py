@@ -319,8 +319,9 @@ class DatabaseManager:
         files_checked: int,
         changes_found: int,
         exit_code: int,
-        findings_data: List[Dict[str, Any]]
+        findings_data: Optional[List[Dict[str, Any]]] = None
     ) -> None:
+        findings_list = findings_data or []
         with self.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
@@ -330,7 +331,7 @@ class DatabaseManager:
                 WHERE id = ?
             """, (time.time(), files_checked, changes_found, exit_code, run_id))
 
-            for f in findings_data:
+            for f in findings_list:
                 cursor.execute("""
                     INSERT INTO findings (
                         run_id, path, change_type, severity, old_hash, new_hash, attack_id

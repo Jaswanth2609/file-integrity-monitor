@@ -1,8 +1,41 @@
 let currentFindings = [];
+let apiToken = localStorage.getItem("fim_api_token") || "";
+
+function setApiToken(token) {
+    apiToken = (token || "").trim();
+    if (apiToken) {
+        localStorage.setItem("fim_api_token", apiToken);
+    } else {
+        localStorage.removeItem("fim_api_token");
+    }
+    updateDownloadLinks();
+    refreshData();
+}
+
+function updateDownloadLinks() {
+    const tokenQuery = apiToken ? `?token=${encodeURIComponent(apiToken)}` : "";
+    const htmlBtn = document.getElementById("link-download-html");
+    const csvBtn = document.getElementById("link-download-csv");
+    const jsonBtn = document.getElementById("link-download-json");
+    if (htmlBtn) htmlBtn.href = `/api/reports/html${tokenQuery}`;
+    if (csvBtn) csvBtn.href = `/api/reports/csv${tokenQuery}`;
+    if (jsonBtn) jsonBtn.href = `/api/reports/json${tokenQuery}`;
+}
 
 async function fetchJson(endpoint, options = {}) {
     try {
+        const headers = options.headers || {};
+        if (apiToken) {
+            headers["Authorization"] = `Bearer ${apiToken}`;
+            headers["X-API-Key"] = apiToken;
+        }
+        options.headers = headers;
+
         const resp = await fetch(endpoint, options);
+        if (resp.status === 401) {
+            promptForToken();
+            return null;
+        }
         if (!resp.ok) return null;
         return await resp.json();
     } catch (e) {
@@ -11,8 +44,16 @@ async function fetchJson(endpoint, options = {}) {
     }
 }
 
+function promptForToken() {
+    const entered = prompt("Enter FIM Dashboard API Token (Bearer Token):", apiToken);
+    if (entered !== null) {
+        setApiToken(entered);
+    }
+}
+
 async function refreshData() {
     document.getElementById("last-updated").innerText = "Updating...";
+    updateDownloadLinks();
 
     // 1. Fetch baselines
     const baseData = await fetchJson("/baselines");
@@ -30,7 +71,7 @@ async function refreshData() {
     if (auditData) {
         document.getElementById("val-chain").innerText = auditData.chain_valid ? "VERIFIED" : "TAMPERED";
         document.getElementById("val-chain").className = "metric-value " + (auditData.chain_valid ? "text-success" : "text-crit");
-        renderAudit(auditData.audit_records || []);
+        renderAudit(auditData.events || []);
     }
 
     // Update metrics
@@ -93,64 +134,65 @@ function renderAudit(records) {
             <td>#${r.id}</td>
             <td><strong>${r.event}</strong></td>
             <td>${new Date(r.timestamp * 1000).toLocaleString()}</td>
-            <td><code class="code-font" style="font-size:0.75rem;">${r.entry_hash.slice(0, 24)}...</code></td>
+            <td><code class="code-font" style="font-size:0.75rem;">${r.entry_hash ? r.entry_hash.slice(0, 24) + '...' : '—'}</code></td>
         </tr>
     `).join("");
 }
 
 function filterFindings() {
-    const query = document.getElementById("filter-search").value.toLowerCase();
+    const term = (document.getElementById("filter-search").value || "").toLowerCase();
     const filtered = currentFindings.filter(f => 
-        (f.path && f.path.toLowerCase().includes(query)) ||
-        (f.description && f.description.toLowerCase().includes(query)) ||
-        (f.new_hash && f.new_hash.toLowerCase().includes(query))
+        (f.path || "").toLowerCase().includes(term) ||
+        (f.description || "").toLowerCase().includes(term) ||
+        (f.attack_id || "").toLowerCase().includes(term)
     );
     renderFindings(filtered);
 }
 
 async function triggerCheck() {
-    const res = await fetchJson("/checks", {
+    const btn = event.target;
+    btn.disabled = true;
+    btn.innerText = "Checking...";
+    await fetchJson("/checks", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ profile: "default" })
+        body: JSON.stringify({})
     });
-    if (res) {
-        alert(`Integrity check finished! Exit code: ${res.exit_code}. Changes found: ${res.changes_found}`);
-        refreshData();
-    }
+    await refreshData();
+    btn.disabled = false;
+    btn.innerText = "⚡ Run Integrity Check";
 }
 
 async function acceptFinding(id) {
-    if (!id) return;
+    if (!confirm("Are you sure you want to accept and acknowledge this finding?")) return;
     await fetchJson(`/findings/${id}/accept`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ user: "web-dashboard" })
+        body: JSON.stringify({ user: "dashboard-operator" })
     });
-    refreshData();
+    await refreshData();
 }
 
-function switchTab(tabName) {
+function switchTab(tab) {
     document.querySelectorAll(".nav-item").forEach(el => el.classList.remove("active"));
-    document.getElementById(`nav-${tabName}`).classList.add("active");
+    document.getElementById(`nav-${tab}`).classList.add("active");
 
-    document.getElementById("section-findings").classList.add("hidden");
-    document.getElementById("section-baselines").classList.add("hidden");
-    document.getElementById("section-audit").classList.add("hidden");
+    document.querySelectorAll(".data-card").forEach(el => el.classList.add("hidden"));
+    document.getElementById(`section-${tab === "overview" ? "findings" : tab}`).classList.remove("hidden");
 
-    if (tabName === "overview" || tabName === "findings") {
-        document.getElementById("section-findings").classList.remove("hidden");
-        document.getElementById("page-title").innerText = tabName === "overview" ? "Security Overview" : "Integrity Findings";
-    } else if (tabName === "baselines") {
-        document.getElementById("section-baselines").classList.remove("hidden");
-        document.getElementById("page-title").innerText = "Monitored Baselines";
-    } else if (tabName === "audit") {
-        document.getElementById("section-audit").classList.remove("hidden");
-        document.getElementById("page-title").innerText = "Immutable Audit Ledger";
-    }
+    const titles = {
+        overview: "Security Overview",
+        baselines: "Baseline Profiles",
+        findings: "Integrity Findings",
+        audit: "Cryptographic Audit Ledger"
+    };
+    document.getElementById("page-title").innerText = titles[tab] || "Security Overview";
 }
 
+// Initial load
 document.addEventListener("DOMContentLoaded", () => {
+    updateDownloadLinks();
     refreshData();
-    setInterval(refreshData, 10000);
+    // Auto-refresh every 15 seconds
+    setInterval(refreshData, 15000);
 });
