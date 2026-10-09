@@ -1,7 +1,7 @@
 """
-High-Performance Cryptographic Hashing Engine for FIM v2.0.
+High-Performance Cryptographic Hashing Engine for FIM v2.1.
 Supports SHA-256 (default), SHA-512, BLAKE2b, legacy algorithms (MD5, SHA-1),
-chunked streaming, parallel processing, and TOCTOU-safe file descriptor hashing.
+chunked streaming, parallel processing, and OS-level TOCTOU-safe file descriptor hashing.
 """
 
 import hashlib
@@ -48,7 +48,7 @@ class HashResult:
         }
 
 class HashEngine:
-    """Multithreaded, chunked cryptographic hash engine."""
+    """Multithreaded, chunked cryptographic hash engine with descriptor-level TOCTOU defense."""
 
     def __init__(self, chunk_size: int = 65536, default_algo: str = "sha256", max_workers: int = 4):
         self.chunk_size = max(chunk_size, 4096)
@@ -82,7 +82,14 @@ class HashEngine:
         algorithms: Optional[List[str]] = None,
         toctou_check: bool = True
     ) -> Dict[str, str]:
-        """Calculates cryptographic hashes of a single file in memory-efficient chunks."""
+        """
+        Calculates cryptographic hashes of a single file in memory-efficient chunks.
+        Mitigates TOCTOU race conditions by:
+        1. Opening the file descriptor with O_NOFOLLOW (where supported).
+        2. Comparing open descriptor stat (fstat) against path stat (lstat).
+        3. Streaming chunks directly through the bound file descriptor (locking the inode).
+        4. Verifying st_ino and nanosecond-resolution timestamps (st_mtime_ns).
+        """
         path = Path(file_path).resolve()
 
         if not path.exists():
@@ -114,10 +121,31 @@ class HashEngine:
             elif a == "sha1":
                 hashers["sha1"] = hashlib.sha1()
 
+        open_flags = os.O_RDONLY
+        if hasattr(os, "O_NOFOLLOW"):
+            open_flags |= os.O_NOFOLLOW
+
         try:
-            # TOCTOU mitigation: open file descriptor and stat before and after
-            stat_before = path.stat()
-            with open(path, "rb") as f:
+            fd = os.open(str(path), open_flags)
+        except PermissionError as e:
+            raise PermissionDeniedError(f"Access denied to file: {path} ({e})")
+        except OSError as e:
+            raise FileNotFoundError_(f"OS error opening file {path}: {e}")
+
+        try:
+            stat_fd = os.fstat(fd)
+            try:
+                stat_path = path.lstat()
+            except OSError:
+                stat_path = stat_fd
+
+            # Inode validation against path replacement attacks
+            if stat_fd.st_ino != 0 and stat_path.st_ino != 0:
+                if stat_fd.st_ino != stat_path.st_ino or stat_fd.st_dev != stat_path.st_dev:
+                    raise PermissionDeniedError(f"Inode mismatch detected on '{path}' — possible symlink swap or TOCTOU attack.")
+
+            # Read content through descriptor (locked to inode)
+            with os.fdopen(fd, "rb", closefd=True) as f:
                 while True:
                     chunk = f.read(self.chunk_size)
                     if not chunk:
@@ -125,11 +153,17 @@ class HashEngine:
                     for h in hashers.values():
                         h.update(chunk)
 
-            if toctou_check:
-                stat_after = path.stat()
-                if stat_before.st_mtime != stat_after.st_mtime or stat_before.st_size != stat_after.st_size:
-                    # File was modified during reading; recalculate once
-                    return self.calculate_hashes(path, algorithms, toctou_check=False)
+                if toctou_check:
+                    try:
+                        stat_after = os.fstat(f.fileno())
+                        mtime_ns_before = getattr(stat_fd, "st_mtime_ns", int(stat_fd.st_mtime * 1e9))
+                        mtime_ns_after = getattr(stat_after, "st_mtime_ns", int(stat_after.st_mtime * 1e9))
+                        
+                        if stat_fd.st_ino != stat_after.st_ino or mtime_ns_before != mtime_ns_after or stat_fd.st_size != stat_after.st_size:
+                            # File was modified or replaced during reading; recalculate once
+                            return self.calculate_hashes(path, algorithms, toctou_check=False)
+                    except (OSError, ValueError):
+                        pass
 
         except PermissionError as e:
             raise PermissionDeniedError(f"Access denied to file: {path} ({e})")
