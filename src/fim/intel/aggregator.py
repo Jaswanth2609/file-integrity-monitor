@@ -69,16 +69,17 @@ class ThreatIntelAggregator:
 
         # 4. Fallback when no API key is provided and hash is not in free public indices
         return IntelReport(
-            provider="Threat Intel Engine (No VT_API_KEY)",
+            provider="Threat Intel Engine (Local DB + CIRCL)",
             query_hash=clean_hash,
             verdict=Verdict.UNKNOWN,
             malicious_count=0,
             total_engines=0,
-            status="NO_API_KEY",
+            status="NOT_INDEXED",
             details={
                 "advisory": (
-                    "No VirusTotal API key configured. Set your free key via 'export VT_API_KEY=...' "
-                    "or in Settings to query 70+ antivirus engines."
+                    "Hash has not been previously submitted or analyzed in public feeds (does NOT imply safe). "
+                    "Hash reputation only tracks past submissions — use YARA content scanning ('fim scan <file>') "
+                    "or configure VT_API_KEY for 70+ AV engine analysis."
                 )
             }
         )

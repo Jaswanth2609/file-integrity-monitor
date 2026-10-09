@@ -23,6 +23,16 @@ A lightweight, enterprise-grade **File Integrity Monitor (FIM)** and threat dete
 
 ---
 
+## How Detection Works: Hash Reputation vs. YARA Content Inspection
+
+> **Hash reputation only knows the past — YARA inspects the file itself, so it catches zero-day samples.**
+>
+> When a file hash has never been submitted to external threat feeds before, FIM reports `UNKNOWN` (rather than incorrectly assuming an unindexed file is safe) and routes the user to content-based detection via YARA rules.
+>
+> If an attacker compiles a custom payload or drops a zero-day webshell, its hash will be unindexed (`UNKNOWN`, `0/0` detections) on cloud threat feeds. FIM automatically triggers its local **YARA Inspection Engine** on added and modified files to evaluate bytecode, regex, and opcode signatures directly on disk.
+
+---
+
 ## Key Capabilities
 
 | Feature | Description |
@@ -32,7 +42,7 @@ A lightweight, enterprise-grade **File Integrity Monitor (FIM)** and threat dete
 | **YARA Threat Inspection** | Automatically scans added and modified files against YARA rules (detecting webshells, reverse shells, and droppers). |
 | **Package Manager Integration** | Queries `dpkg`, `rpm`, and `pacman` to eliminate false positives during routine OS updates (`apt upgrade`, `dnf update`). |
 | **Symlink TOCTOU Defense** | Detects symlink replacement and redirection attacks (mapped to **MITRE ATT&CK T1036 Masquerading**). |
-| **Threat Intelligence** | Real-time hash reputation lookups via **VirusTotal API v3** and **MalwareBazaar** with rate limiting and local SQLite caching. |
+| **Cascade Threat Intelligence** | Multi-source hash lookup pipeline (`Local DB` → `CIRCL Hashlookup` → `VirusTotal API v3`) with rate limiting and local SQLite caching. |
 | **Dashboard & Bind Security** | Multi-threaded dashboard server refuses non-loopback binds by default and enforces Bearer token authentication. |
 | **User-Editable Rules** | Fully customizable detection and severity scoring defined in `config/rules.yaml`. |
 
@@ -84,6 +94,14 @@ python3 main.py audit anchor-verify --anchor /mnt/secure_backup/chain_head.json 
 python3 main.py serve
 ```
 Open **[http://127.0.0.1:8000](http://127.0.0.1:8000)** in your browser for real-time monitoring and 1-click HTML/CSV/JSON report downloads.
+
+---
+
+## Privacy & External Queries
+
+> [!IMPORTANT]
+> **Privacy Guarantee**: File contents are **NEVER** uploaded across the network.  
+> File hashes (never file contents) may be queried against VirusTotal and CIRCL's public hashlookup service for reputation analysis.
 
 ---
 
