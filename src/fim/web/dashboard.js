@@ -8,18 +8,7 @@ function setApiToken(token) {
     } else {
         localStorage.removeItem("fim_api_token");
     }
-    updateDownloadLinks();
     refreshData();
-}
-
-function updateDownloadLinks() {
-    const tokenQuery = apiToken ? `?token=${encodeURIComponent(apiToken)}` : "";
-    const htmlBtn = document.getElementById("link-download-html");
-    const csvBtn = document.getElementById("link-download-csv");
-    const jsonBtn = document.getElementById("link-download-json");
-    if (htmlBtn) htmlBtn.href = `/api/reports/html${tokenQuery}`;
-    if (csvBtn) csvBtn.href = `/api/reports/csv${tokenQuery}`;
-    if (jsonBtn) jsonBtn.href = `/api/reports/json${tokenQuery}`;
 }
 
 async function fetchJson(endpoint, options = {}) {
@@ -44,6 +33,39 @@ async function fetchJson(endpoint, options = {}) {
     }
 }
 
+async function downloadReport(format) {
+    try {
+        const headers = {};
+        if (apiToken) {
+            headers["Authorization"] = `Bearer ${apiToken}`;
+            headers["X-API-Key"] = apiToken;
+        }
+        const resp = await fetch(`/api/reports/${format}`, { headers });
+        if (resp.status === 401) {
+            promptForToken();
+            return;
+        }
+        if (!resp.ok) {
+            alert(`Failed to download report (${resp.status})`);
+            return;
+        }
+
+        const blob = await resp.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.style.display = "none";
+        a.href = url;
+        a.download = `fim_report_default.${format}`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+    } catch (e) {
+        console.error("Download report error:", e);
+        alert("Error generating or downloading report.");
+    }
+}
+
 function promptForToken() {
     const entered = prompt("Enter FIM Dashboard API Token (Bearer Token):", apiToken);
     if (entered !== null) {
@@ -53,7 +75,6 @@ function promptForToken() {
 
 async function refreshData() {
     document.getElementById("last-updated").innerText = "Updating...";
-    updateDownloadLinks();
 
     // 1. Fetch baselines
     const baseData = await fetchJson("/baselines");
@@ -191,7 +212,6 @@ function switchTab(tab) {
 
 // Initial load
 document.addEventListener("DOMContentLoaded", () => {
-    updateDownloadLinks();
     refreshData();
     // Auto-refresh every 15 seconds
     setInterval(refreshData, 15000);
