@@ -19,7 +19,7 @@ except ImportError:
 from .errors import ConfigurationError
 
 DEFAULT_CONFIG: Dict[str, Any] = {
-    "version": "2.1.0",
+    "version": "2.2.0",
     "app": {
         "name": "File Integrity Monitor",
         "secret_key": "",  # Used for HMAC-SHA256 baseline signing if not in keyring/env
@@ -223,7 +223,7 @@ class ConfigManager:
     def _apply_env_overrides(self) -> None:
         """Injects environment variables for sensitive settings."""
         # VirusTotal API Key
-        vt_key = os.getenv("VT_API_KEY") or os.getenv("VIRUSTOTAL_API_KEY")
+        vt_key = os.getenv("VT_API_KEY") or os.getenv("VIRUSTOTAL_API_KEY") or os.getenv("FIM_VIRUSTOTAL_API_KEY")
         if vt_key:
             self.data["virustotal"]["api_key"] = vt_key.strip()
 

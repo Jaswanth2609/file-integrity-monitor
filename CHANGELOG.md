@@ -6,6 +6,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.2.0] - 2026-10-09
+
+### Security Hardening & Storage Architecture (Top 6 Fixes)
+- **#1 — Zero Hardcoded Secrets & Key Fingerprinting**: Removed all fallback key constants from the codebase. Baselines now embed an 8-character `sha256(key)` fingerprint. Key migrations require explicit operator input of previous keys (`--old-key`) verified against a salted `key_registry` table.
+- **#2 — Strict CORS Origin Allowlist**: Replaced wildcard CORS headers with configurable origin validation (`api.allowed_origins`) and disabled CORS headers on internal health endpoints.
+- **#3 — Header-Only API Authentication**: Eliminated URL query parameter token acceptance from REST endpoints. All API routes strictly enforce `Authorization: Bearer <token>` or `X-API-Key: <token>` headers.
+- **#4 — OS-Level TOCTOU Inode Defense**: File hashing now uses bound file descriptors (`os.open` with `O_NOFOLLOW` and `os.fdopen`) to lock the inode during streaming and checks `st_mtime_ns` and `st_ino` to prevent file swapping.
+- **#5 — SQLite Resilience & Database Verification**: Enabled WAL mode and `PRAGMA synchronous=NORMAL` across all SQLite databases. Added automated baseline manifest backup hooks (`backup.enabled`) and a new `fim db verify` subcommand running `PRAGMA integrity_check`.
+- **#6 — Dedicated Audit DB & Continuous Anchoring**: Separated the audit log into a dedicated `audit.db` file, continuously updating `~/.fim/chain_anchor` (`0400` read-only) and appending to a flat `~/.fim/audit.jsonl` stream on every event append.
+
+---
+
 ## [2.1.0] - 2026-10-09
 
 ### Cryptographic Hardening & Asymmetric Security

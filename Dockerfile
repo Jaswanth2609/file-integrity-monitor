@@ -1,4 +1,4 @@
-# File Integrity Monitor (FIM) v2.1 Container
+# File Integrity Monitor (FIM) v2.2 Container
 FROM python:3.12-slim AS builder
 
 WORKDIR /app
@@ -14,7 +14,7 @@ RUN pip install --no-cache-dir --user -r requirements.txt
 FROM python:3.12-slim
 
 LABEL maintainer="Jaswanth <jaswanth@users.noreply.github.com>"
-LABEL version="2.1.0"
+LABEL version="2.2.0"
 LABEL description="File Integrity Monitor (FIM) with Ed25519 signing and Threat Intelligence"
 
 ENV PYTHONDONTWRITEBYTECODE=1 \

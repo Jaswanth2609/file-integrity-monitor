@@ -1,9 +1,10 @@
 """
 Command-Line Interface (CLI) Engine for FIM v2.1.
-Implements subcommands: baseline, check, watch, scan, hash, audit, keygen, report, config, serve, menu.
+Implements subcommands: baseline, check, watch, scan, hash, audit, db, keygen, report, config, serve, menu.
 """
 
 import argparse
+import getpass
 import json
 import os
 import sys
@@ -29,11 +30,11 @@ from ..storage.db import DatabaseManager
 def create_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="fim",
-        description="File Integrity Monitor (FIM) v2.1 - Enterprise File Integrity & Threat Intelligence",
+        description="File Integrity Monitor (FIM) v2.2 - Enterprise File Integrity & Threat Intelligence",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("--config", "-c", help="Path to custom configuration file (YAML/JSON)")
-    parser.add_argument("--version", "-v", action="version", version="FIM v2.1.0 (by Jaswanth)")
+    parser.add_argument("--version", "-v", action="version", version="FIM v2.2.0 (by Jaswanth)")
 
     subparsers = parser.add_subparsers(dest="command", help="Available subcommands")
 
@@ -65,6 +66,7 @@ def create_parser() -> argparse.ArgumentParser:
     # baseline migrate
     p_base_migrate = base_sub.add_parser("migrate", help="Explicitly migrate and re-sign baseline with current master key")
     p_base_migrate.add_argument("name", nargs="?", default="default", help="Baseline profile name (default: default)")
+    p_base_migrate.add_argument("--old-key", help="Previous master secret key used to sign the baseline")
 
     # Subcommand: check
     check_parser = subparsers.add_parser("check", help="Verify filesystem integrity against baseline")
@@ -73,6 +75,7 @@ def create_parser() -> argparse.ArgumentParser:
     check_parser.add_argument("--no-yara", action="store_true", help="Disable YARA scanning on modified/added files")
     check_parser.add_argument("--format", "-f", choices=["table", "json"], default="table", help="Output format")
     check_parser.add_argument("--accept-migration", action="store_true", help="Explicitly accept legacy key migration and re-sign baseline")
+    check_parser.add_argument("--old-key", help="Previous master secret key (used during key migration)")
     check_parser.add_argument("--interval", type=int, help="Run continuous scheduled scans at the specified interval in seconds")
     check_parser.add_argument("--export-html", help="Export HTML report to file")
     check_parser.add_argument("--export-json", help="Export JSON report to file")
@@ -92,6 +95,11 @@ def create_parser() -> argparse.ArgumentParser:
     p_anchor_ver = audit_sub.add_parser("anchor-verify", help="Verify audit chain against an external signed anchor")
     p_anchor_ver.add_argument("--anchor", "-a", required=True, help="Path to external anchor JSON file")
     p_anchor_ver.add_argument("--pubkey", help="Path to Ed25519 public key to verify anchor signature")
+
+    # Subcommand: db (Database Health & Integrity)
+    db_parser = subparsers.add_parser("db", help="Inspect and verify SQLite database health and integrity")
+    db_sub = db_parser.add_subparsers(dest="db_action")
+    db_sub.add_parser("verify", help="Run SQLite PRAGMA integrity check and verify audit trail consistency")
 
     # Subcommand: watch
     watch_parser = subparsers.add_parser("watch", help="Start real-time monitoring daemon")
@@ -220,8 +228,14 @@ def main_cli(args_list: Optional[List[str]] = None) -> int:
             return 0
         elif action == "migrate":
             profile = args.name or "default"
+            old_k = args.old_key
+            if not old_k and sys.stdin.isatty():
+                try:
+                    old_k = getpass.getpass(f"Enter previous master key for baseline '{profile}': ")
+                except Exception:
+                    old_k = None
             try:
-                ok = b_mgr.migrate_baseline(profile)
+                ok = b_mgr.migrate_baseline(profile, old_key=old_k)
                 if ok:
                     print(f"\n{Colors.GREEN}[✓] Baseline '{profile}' successfully migrated and re-signed with current master key!{Colors.RESET}")
                     return 0
@@ -241,7 +255,8 @@ def main_cli(args_list: Optional[List[str]] = None) -> int:
                     profile_name=args.profile,
                     accept_migration=args.accept_migration,
                     public_key_path=args.pubkey,
-                    enable_yara=not args.no_yara
+                    enable_yara=not args.no_yara,
+                    old_key=args.old_key
                 )
             except BaselineTamperedError as e:
                 print(f"{Colors.RED}[CRITICAL ERROR 2] {e}{Colors.RESET}", file=sys.stderr)
@@ -296,7 +311,9 @@ def main_cli(args_list: Optional[List[str]] = None) -> int:
             col = Colors.GREEN if valid else Colors.RED
             print(f"\n{col}Audit Chain Integrity: {'VERIFIED' if valid else 'TAMPERED'}{Colors.RESET}")
             print(f"Total Events Checked : {count}")
-            print(f"Status Details       : {msg}\n")
+            if msg:
+                print(f"Status Details       : {msg}")
+            print("")
             return 0 if valid else 2
 
         elif action == "list":
@@ -344,6 +361,29 @@ def main_cli(args_list: Optional[List[str]] = None) -> int:
             else:
                 print(f"\n{Colors.RED}[!] ANCHOR INTEGRITY FAILURE: {msg}{Colors.RESET}\n", file=sys.stderr)
                 return 2
+
+    elif cmd == "db":
+        action = args.db_action
+        if action == "verify" or action is None:
+            print(f"\n{Colors.BOLD}--- FIM Database & Storage Health Verification ---{Colors.RESET}")
+            db_ok, db_msgs = db.verify_database_integrity()
+            chain_ok, chain_msg, count = db.audit.verify_integrity()
+
+            if db_ok:
+                print(f"  SQLite Database Integrity : {Colors.GREEN}[OK] PRAGMA integrity_check passed{Colors.RESET}")
+            else:
+                print(f"  SQLite Database Integrity : {Colors.RED}[FAIL] Corruption detected{Colors.RESET}")
+                for m in db_msgs:
+                    print(f"    {Colors.RED}• {m}{Colors.RESET}")
+
+            if chain_ok:
+                print(f"  Audit Ledger Integrity    : {Colors.GREEN}[OK] {count} events verified in chain & anchor{Colors.RESET}")
+            else:
+                print(f"  Audit Ledger Integrity    : {Colors.RED}[FAIL] {chain_msg}{Colors.RESET}")
+
+            overall = db_ok and chain_ok
+            print(f"\nOverall Status: {Colors.GREEN + 'HEALTHY' if overall else Colors.RED + 'CORRUPTED/TAMPERED'}{Colors.RESET}\n")
+            return 0 if overall else 2
 
     elif cmd == "watch":
         print(f"Starting real-time file integrity watcher on profile '{args.profile}'...")

@@ -1,10 +1,4 @@
-<<<<<<< HEAD
-
-# File Integrity Monitor (FIM) v2.1.0
- (release: v2.1.0 - security advisories, key rotation, symlink defense, and non-blocking server)
-=======
-# File Integrity Monitor (FIM) v2.1.0
->>>>>>> e3b0bf9 (feat: ed25519 asymmetric signing, chain-head anchoring, YARA scanner, and hardened dashboard)
+# File Integrity Monitor (FIM) v2.2.0
 
 [![Python Version](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
@@ -89,11 +83,20 @@ python3 main.py audit anchor-export --output /mnt/secure_backup/chain_head.json 
 python3 main.py audit anchor-verify --anchor /mnt/secure_backup/chain_head.json --pubkey ~/.fim/fim_ed25519.pub
 ```
 
-### 5. Launch Web Dashboard & REST API
+### 5. Verify Database & Storage Integrity
+Verify SQLite database health and cryptographic audit chain consistency:
+```bash
+python3 main.py db verify
+```
+
+### 6. Launch Web Dashboard & REST API
 ```bash
 python3 main.py serve
 ```
 Open **[http://127.0.0.1:8000](http://127.0.0.1:8000)** in your browser for real-time monitoring and 1-click HTML/CSV/JSON report downloads.
+
+> [!NOTE]
+> **API Security**: API and dashboard requests strictly require header authentication (`Authorization: Bearer <token>` or `X-API-Key: <token>`). URL query parameter tokens are rejected. CORS is restricted to configurable trusted origins (`api.allowed_origins`).
 
 ---
 

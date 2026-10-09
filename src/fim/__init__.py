@@ -6,9 +6,9 @@ Author: Jaswanth (Jaswanth2609)
 Repository: https://github.com/Jaswanth2609/file-integrity-monitor
 """
 
-__version__ = "2.1.0"
+__version__ = "2.2.0"
 __author__ = "Jaswanth (Jaswanth2609)"
-__license__ = "GPL-3.0"
+__license__ = "MIT"
 
 from .config import ConfigManager
 from .core.hasher import HashEngine, HashResult
