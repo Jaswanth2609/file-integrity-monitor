@@ -197,12 +197,13 @@ class InteractiveMenu:
                 except Exception as ve:
                     print(f"\n{Colors.RED}[!] Verification failed with public key: {ve}{Colors.RESET}")
 
-            elif "legacy/rotated master key" in err_text:
+            elif "master key" in err_text or "fingerprint" in err_text:
                 print(f"\n{Colors.WARNING}[!] {err_text}{Colors.RESET}")
                 choice = input(f"\n{Colors.BOLD}Would you like to migrate this baseline to the new secure key now? [y/N]: {Colors.RESET}").strip().lower()
                 if choice == "y":
+                    old_k = input(f"{Colors.BOLD}Enter previous master key: {Colors.RESET}").strip()
                     try:
-                        self.baseline_mgr.migrate_baseline(profile)
+                        self.baseline_mgr.migrate_baseline(profile, old_key=old_k)
                         print(f"\n{Colors.GREEN}[✓] Baseline '{profile}' successfully migrated! Re-verifying...{Colors.RESET}\n")
                         summary = self.comparator.check_baseline(profile_name=profile)
                         self._display_summary(summary)

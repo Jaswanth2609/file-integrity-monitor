@@ -122,7 +122,8 @@ class IntegrityComparator:
         progress_callback: Optional[Any] = None,
         accept_migration: bool = False,
         public_key_path: Optional[Union[str, Path]] = None,
-        enable_yara: bool = True
+        enable_yara: bool = True,
+        old_key: Optional[str] = None
     ) -> VerificationSummary:
         """
         Executes a full verification check against the named baseline.
@@ -136,7 +137,8 @@ class IntegrityComparator:
             profile_name,
             verify=True,
             accept_migration=accept_migration,
-            public_key_path=public_key_path
+            public_key_path=public_key_path,
+            old_key=old_key
         )
         baseline_files = baseline.files
 

@@ -1,8 +1,8 @@
 """
 Baseline Management Engine for FIM v2.1.
 Handles baseline creation, cryptographic HMAC-SHA256 and Ed25519 asymmetric signing,
-tamper verification, named profiles, glob filtering, .fimignore support, diffing,
-symlink resolution, key migration, and baseline acceptance.
+key fingerprinting, safe migration protocols, glob filtering, .fimignore support, diffing,
+symlink resolution, and automated backup hooks.
 """
 
 import fnmatch
@@ -64,6 +64,7 @@ class BaselineManifest:
     algo: str
     signature: str
     files: Dict[str, BaselineEntry] = field(default_factory=dict)
+    key_fingerprint: str = ""
     version: int = 2
     skipped: List[Dict[str, str]] = field(default_factory=list)
 
@@ -74,6 +75,7 @@ class BaselineManifest:
             "root_paths": self.root_paths,
             "algo": self.algo,
             "signature": self.signature,
+            "key_fingerprint": self.key_fingerprint,
             "version": self.version,
             "file_count": len(self.files),
             "skipped": self.skipped,
@@ -91,6 +93,11 @@ class BaselineManager:
             default_algo=self.config.get("hashing.default_algorithm", "sha256"),
             max_workers=int(self.config.get("hashing.max_workers", 4))
         )
+
+    @staticmethod
+    def calculate_key_fingerprint(key: str) -> str:
+        """Returns the first 8 hex characters of sha256(key)."""
+        return hashlib.sha256(key.encode("utf-8")).hexdigest()[:8]
 
     def _get_canonical_bytes(self, files: List[Dict[str, Any]], legacy_format: bool = False) -> bytes:
         sorted_files = sorted(files, key=lambda x: x["path"])
@@ -120,9 +127,7 @@ class BaselineManager:
         private_key_path: Optional[Union[str, Path]] = None,
         legacy_format: bool = False
     ) -> str:
-        """
-        Calculates signature (Ed25519 asymmetric or HMAC-SHA256) across sorted canonical records.
-        """
+        """Calculates signature (Ed25519 asymmetric or HMAC-SHA256) across sorted canonical records."""
         canonical_bytes = self._get_canonical_bytes(files, legacy_format=legacy_format)
         if (signing_type == "ed25519" or private_key_path) and AsymmetricEngine.is_available():
             priv_p = private_key_path or self.config.get("signing.private_key_path") or Path("~/.fim/fim_ed25519").expanduser()
@@ -209,6 +214,24 @@ class BaselineManager:
 
         return sorted(list(collected))
 
+    def _export_backup_manifest(self, manifest: BaselineManifest) -> None:
+        """Exports a signed JSON copy of the baseline manifest to backup.destination if enabled."""
+        if not self.config.get("backup.enabled", False):
+            return
+        dest_dir = self.config.get("backup.destination")
+        if not dest_dir:
+            return
+        try:
+            dest_p = Path(dest_dir).expanduser().resolve()
+            dest_p.mkdir(parents=True, exist_ok=True)
+            backup_file = dest_p / f"baseline_{manifest.name}_{int(manifest.created_at)}.json"
+            backup_file.write_text(json.dumps(manifest.to_dict(), indent=2), encoding="utf-8")
+            if os.name != "nt":
+                os.chmod(backup_file, stat.S_IRUSR | stat.S_IWUSR)
+            logger.info(f"Exported signed baseline backup to {backup_file}")
+        except Exception as e:
+            logger.warning(f"Failed to export baseline backup to {dest_dir}: {e}")
+
     def create_baseline(
         self,
         name: str,
@@ -274,6 +297,7 @@ class BaselineManager:
             private_key_path=private_key_path
         )
         root_strs = [str(Path(p).expanduser().resolve()) for p in paths]
+        key_fp = self.calculate_key_fingerprint(self.config.secret_key) if signing_type == "hmac" else "ed25519"
 
         # Persist in DB
         self.db.save_baseline(
@@ -281,7 +305,8 @@ class BaselineManager:
             root_paths=root_strs,
             algo=selected_algo,
             signature=signature,
-            files_data=file_entries
+            files_data=file_entries,
+            key_fingerprint=key_fp
         )
 
         manifest_files = {
@@ -301,26 +326,33 @@ class BaselineManager:
             for f in file_entries
         }
 
-        return BaselineManifest(
+        manifest = BaselineManifest(
             name=name,
             created_at=time.time(),
             root_paths=root_strs,
             algo=selected_algo,
             signature=signature,
             files=manifest_files,
+            key_fingerprint=key_fp,
             skipped=skipped_files
         )
+
+        # Trigger backup hook if configured
+        self._export_backup_manifest(manifest)
+
+        return manifest
 
     def load_baseline(
         self,
         name: str,
         verify: bool = True,
         accept_migration: bool = False,
-        public_key_path: Optional[Union[str, Path]] = None
+        public_key_path: Optional[Union[str, Path]] = None,
+        old_key: Optional[str] = None
     ) -> BaselineManifest:
         """
         Loads a baseline by name and verifies signature (HMAC or Ed25519) against tampering.
-        Requires explicit accept_migration=True or 'fim baseline migrate' on legacy key detection.
+        Requires explicit operator old key and consent on legacy key rotation.
         """
         raw = self.db.get_baseline(name)
         if not raw:
@@ -352,36 +384,43 @@ class BaselineManager:
                     if hmac.compare_digest(recorded_sig, legacy_sig):
                         valid = True
 
-                # Check if signature matches the authentic legacy master key
-                if not valid:
-                    old_key_sig = self._calculate_hmac_signature(
-                        files_data, secret_key="fim-default-master-key-v2-secure", legacy_format=True
-                    )
-                    if hmac.compare_digest(recorded_sig, old_key_sig):
+                # If direct verification failed, test user-supplied old_key for rotation/migration
+                if not valid and old_key:
+                    old_key_sig = self._calculate_hmac_signature(files_data, secret_key=old_key)
+                    old_key_sig_leg = self._calculate_hmac_signature(files_data, secret_key=old_key, legacy_format=True)
+                    if hmac.compare_digest(recorded_sig, old_key_sig) or hmac.compare_digest(recorded_sig, old_key_sig_leg):
                         if accept_migration:
-                            # User explicitly opted into key migration
                             new_sig = self._calculate_hmac_signature(files_data)
+                            new_fp = self.calculate_key_fingerprint(self.config.secret_key)
                             with self.db.get_connection() as conn:
-                                conn.execute("UPDATE baselines SET signature = ? WHERE id = ?", (new_sig, raw["id"]))
-                                chain = AuditChain(conn)
-                                chain.append_event("BASELINE_MIGRATED", {
-                                    "name": name,
-                                    "old_sig": recorded_sig,
-                                    "new_sig": new_sig,
-                                    "method": "explicit_flag"
-                                })
+                                conn.execute("UPDATE baselines SET signature = ?, key_fingerprint = ? WHERE id = ?", (new_sig, new_fp, raw["id"]))
+                            self.db.audit.append_event("BASELINE_MIGRATED", {
+                                "name": name,
+                                "old_sig": recorded_sig,
+                                "new_sig": new_sig,
+                                "method": "explicit_key_migration"
+                            })
+                            self.db.remove_rotated_key(old_key)
                             recorded_sig = new_sig
                             valid = True
                         else:
                             raise BaselineTamperedError(
-                                f"Baseline '{name}' was signed with a legacy/rotated master key. "
-                                f"To explicitly verify and migrate this baseline to the new secure master key, run: "
-                                f"'fim baseline migrate {name}' or 'fim check --profile {name} --accept-migration'"
+                                f"Baseline '{name}' was signed with a previous master key. "
+                                f"To migrate and re-sign with current key, run: "
+                                f"'fim baseline migrate {name} --old-key <key>' or 'fim check --profile {name} --accept-migration --old-key <key>'"
                             )
 
                 if not valid:
+                    rec_fp = raw.get("key_fingerprint", "")
+                    curr_fp = self.calculate_key_fingerprint(self.config.secret_key)
+                    if rec_fp and rec_fp != curr_fp:
+                        raise BaselineTamperedError(
+                            f"Baseline '{name}' key fingerprint mismatch (baseline: {rec_fp}, current key: {curr_fp}). "
+                            f"If your master key was rotated, run 'fim baseline migrate {name} --old-key <previous_key>'."
+                        )
                     raise BaselineTamperedError(
-                        f"Baseline '{name}' HMAC signature mismatch! Expected: {recorded_sig[:12]}..., Computed: {recomputed[:12]}..."
+                        f"Baseline '{name}' HMAC signature mismatch! Expected: {recorded_sig[:12]}..., Computed: {recomputed[:12]}... "
+                        f"If the master key was rotated, run 'fim baseline migrate {name} --old-key <previous_key>'."
                     )
 
         manifest_files = {
@@ -407,6 +446,7 @@ class BaselineManager:
             root_paths=raw["root_paths"],
             algo=raw["algo"],
             signature=recorded_sig,
+            key_fingerprint=raw.get("key_fingerprint", ""),
             files=manifest_files,
             version=raw.get("version", 1)
         )
@@ -443,9 +483,10 @@ class BaselineManager:
             "modified": modified
         }
 
-    def migrate_baseline(self, name: str) -> bool:
+    def migrate_baseline(self, name: str, old_key: Optional[str] = None) -> bool:
         """
-        Explicitly migrates and re-signs a legacy baseline with the current secure random master key.
+        Explicitly migrates and re-signs a baseline using the operator-supplied old key
+        and the active secure master key.
         """
         raw = self.db.get_baseline(name)
         if not raw:
@@ -457,28 +498,30 @@ class BaselineManager:
         # Check if already signed with current key
         current_sig = self._calculate_hmac_signature(files_data)
         if hmac.compare_digest(recorded_sig, current_sig):
-            logger.info(f"Baseline '{name}' is already up to date.")
+            logger.info(f"Baseline '{name}' is already signed with active master key.")
             return True
 
-        # Check if authentic legacy key matches
-        legacy_sig = self._calculate_hmac_signature(
-            files_data, secret_key="fim-default-master-key-v2-secure", legacy_format=True
-        )
-        if not hmac.compare_digest(recorded_sig, legacy_sig):
-            legacy_new_fmt = self._calculate_hmac_signature(files_data, legacy_format=True)
-            if not hmac.compare_digest(recorded_sig, legacy_new_fmt):
-                raise BaselineTamperedError(
-                    f"Cannot migrate baseline '{name}': signature does not match authentic legacy master key either. Possible unauthorized tampering!"
-                )
+        if not old_key:
+            raise ValueError(f"Migrating baseline '{name}' requires supplying previous key via --old-key.")
 
-        # Re-sign with current key
+        # Verify old key matches recorded signature
+        old_sig = self._calculate_hmac_signature(files_data, secret_key=old_key)
+        old_sig_leg = self._calculate_hmac_signature(files_data, secret_key=old_key, legacy_format=True)
+        if not hmac.compare_digest(recorded_sig, old_sig) and not hmac.compare_digest(recorded_sig, old_sig_leg):
+            raise BaselineTamperedError(
+                f"Cannot migrate baseline '{name}': supplied old key does not match recorded signature! Possible unauthorized tampering."
+            )
+
+        new_fp = self.calculate_key_fingerprint(self.config.secret_key)
         with self.db.get_connection() as conn:
-            conn.execute("UPDATE baselines SET signature = ? WHERE id = ?", (current_sig, raw["id"]))
-            chain = AuditChain(conn)
-            chain.append_event("BASELINE_MIGRATED", {
-                "name": name,
-                "old_sig": recorded_sig,
-                "new_sig": current_sig,
-                "action": "explicit_migrate"
-            })
+            conn.execute("UPDATE baselines SET signature = ?, key_fingerprint = ? WHERE id = ?", (current_sig, new_fp, raw["id"]))
+
+        self.db.audit.append_event("BASELINE_MIGRATED", {
+            "name": name,
+            "old_sig": recorded_sig,
+            "new_sig": current_sig,
+            "fingerprint": new_fp,
+            "action": "explicit_migrate"
+        })
+        self.db.remove_rotated_key(old_key)
         return True

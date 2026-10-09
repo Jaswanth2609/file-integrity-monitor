@@ -5,6 +5,7 @@ Calculates Shannon entropy, enforces file-based 0600 key storage, and prevents l
 
 import math
 import os
+import secrets
 import stat
 from pathlib import Path
 from typing import Tuple, Union
@@ -58,12 +59,20 @@ def validate_secret_entropy(
 
     return True, f"Entropy validation passed ({ent:.2f} bits/symbol)."
 
-def load_secure_key_file(key_path: Union[str, Path], enforce_permissions: bool = True) -> str:
+def load_secure_key_file(key_path: Union[str, Path], enforce_permissions: bool = True, auto_generate: bool = False) -> str:
     """
     Loads a key from a file, enforcing strict POSIX file permissions (0600) and entropy check.
+    If auto_generate is True, generates a high-entropy 256-bit key if the file does not exist.
     """
     p = Path(key_path).expanduser().resolve()
     if not p.exists():
+        if auto_generate:
+            p.parent.mkdir(parents=True, exist_ok=True)
+            generated = secrets.token_hex(32)
+            p.write_text(generated, encoding="utf-8")
+            if os.name != "nt":
+                os.chmod(p, stat.S_IRUSR | stat.S_IWUSR)
+            return generated
         raise FileNotFoundError(f"Key file '{p}' does not exist.")
 
     if enforce_permissions and os.name != "nt":
