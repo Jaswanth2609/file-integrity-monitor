@@ -7,7 +7,7 @@
 >>>>>>> e3b0bf9 (feat: ed25519 asymmetric signing, chain-head anchoring, YARA scanner, and hardened dashboard)
 
 [![Python Version](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
-[![License: GPL-3.0](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![VirusTotal API v3](https://img.shields.io/badge/VirusTotal-API%20v3-green.svg)](https://www.virustotal.com/)
 [![Threat Model](https://img.shields.io/badge/Security-Threat%20Model-red.svg)](docs/THREAT_MODEL.md)
 
@@ -126,12 +126,27 @@ docker run -d -p 127.0.0.1:8000:8000 -v /etc:/monitored/etc:ro --name fim-agent 
 
 ---
 
-## Running Tests
+## Contributing & Development
 
-Execute the comprehensive acceptance test suite (covering Ed25519, YARA, symlink defense, and anchoring):
-```bash
-python3 -m unittest discover tests
-```
+Contributions are welcome! Please follow these development steps:
+
+1. **Clone & Virtual Environment**:
+   ```bash
+   git clone https://github.com/Jaswanth2609/file-integrity-monitor.git
+   cd file-integrity-monitor
+   python3 -m venv venv
+   source venv/bin/activate
+   pip install -r requirements.txt
+   ```
+
+2. **Run Tests**:
+   ```bash
+   python3 -m unittest discover -s tests -p "test_*.py"
+   ```
+
+3. **Code Quality**:
+   - Maintain PEP 8 formatting via `black --line-length 100`.
+   - Run security auditing via `bandit -r src/fim`.
 
 ---
 
@@ -142,6 +157,7 @@ For an in-depth breakdown of trust boundaries, attacker capabilities, and detect
 ---
 
 ## License
-Licensed under GNU General Public License v3.0 (GPL-3.0). See [LICENSE](LICENSE) for details.
 
-**Maintainer**: [Jaswanth (Jaswanth2609)](https://github.com/Jaswanth2609/file-integrity-monitor)
+Licensed under the [MIT License](LICENSE).
+
+Copyright (c) 2026 Jaswanth ([@Jaswanth2609](https://github.com/Jaswanth2609)).
