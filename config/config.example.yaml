@@ -3,13 +3,29 @@ virustotal:
   rate_limit_rpm: 4
   timeout_seconds: 15
   max_retries: 3
+
 database:
   path: ~/.fim/fim_database.db
+  audit_log_path: ~/.fim/audit.db
   cache_ttl_hours: 24
   max_history_records: 1000
+
+backup:
+  enabled: false
+  destination: "/mnt/secure_backup/fim/"
+
+api:
+  allowed_origins:
+    - "http://localhost:8000"
+    - "http://127.0.0.1:8000"
+    - "http://localhost"
+    - "http://127.0.0.1"
+  allow_remote: false
+
 ui:
   colored_output: true
   progress_bar_threshold_mb: 10
+
 scanner:
   chunk_size_kb: 64
   memory_threshold_mb: 300

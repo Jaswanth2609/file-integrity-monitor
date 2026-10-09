@@ -1,11 +1,12 @@
 """
 REST API and Static Dashboard Server for FIM v2.1.
 Exposes endpoints for baselines, verification checks, findings, reports download, Prometheus metrics, and UI dashboard.
-Enforces loopback interface bind security and API/Dashboard authentication.
+Enforces loopback interface bind security, CORS origin allowlist, and header-only API/Dashboard authentication.
 """
 
 import http.server
 import json
+import logging
 import os
 import secrets
 import socketserver
@@ -22,6 +23,7 @@ from ..crypto.entropy import validate_secret_entropy
 from ..reports.generator import ReportGenerator
 from ..storage.db import DatabaseManager
 
+logger = logging.getLogger("fim.api")
 LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
 
 class FIMHttpHandler(http.server.SimpleHTTPRequestHandler):
@@ -34,14 +36,33 @@ class FIMHttpHandler(http.server.SimpleHTTPRequestHandler):
     web_dir: Path
     api_token: str
 
-    def _send_json(self, status: int, data: Any):
+    def _get_cors_origin(self) -> str:
+        """Determines if the requesting Origin is explicitly permitted by config allowlist."""
+        request_origin = self.headers.get("Origin", "")
+        if not request_origin:
+            return ""
+        allowed = self.config.get("api.allowed_origins", [
+            "http://localhost:8000",
+            "http://127.0.0.1:8000",
+            "http://localhost",
+            "http://127.0.0.1"
+        ])
+        if request_origin in allowed or "*" in allowed:
+            return request_origin
+        return ""
+
+    def _send_json(self, status: int, data: Any, include_cors: bool = True):
         payload = json.dumps(data, indent=2).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(payload)))
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-API-Key")
+        if include_cors:
+            origin = self._get_cors_origin()
+            if origin:
+                self.send_header("Access-Control-Allow-Origin", origin)
+                self.send_header("Vary", "Origin")
+                self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+                self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-API-Key")
         self.end_headers()
         self.wfile.write(payload)
 
@@ -50,11 +71,18 @@ class FIMHttpHandler(http.server.SimpleHTTPRequestHandler):
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
         self.send_header("Content-Length", str(len(content)))
-        self.send_header("Access-Control-Allow-Origin", "*")
+        origin = self._get_cors_origin()
+        if origin:
+            self.send_header("Access-Control-Allow-Origin", origin)
+            self.send_header("Vary", "Origin")
         self.end_headers()
         self.wfile.write(content)
 
     def _check_auth(self) -> bool:
+        """
+        Validates authentication using HTTP headers only (Authorization: Bearer or X-API-Key).
+        URL query parameter tokens are explicitly rejected to prevent leakage in server access logs and Referer headers.
+        """
         if not self.api_token:
             return True
 
@@ -68,19 +96,16 @@ class FIMHttpHandler(http.server.SimpleHTTPRequestHandler):
         if api_key.strip() == self.api_token:
             return True
 
-        # Check query parameter ?token=
-        parsed = urlparse(self.path)
-        qs = parse_qs(parsed.query)
-        if "token" in qs and qs["token"][0].strip() == self.api_token:
-            return True
-
         return False
 
     def do_OPTIONS(self):
         self.send_response(200)
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-API-Key")
+        origin = self._get_cors_origin()
+        if origin:
+            self.send_header("Access-Control-Allow-Origin", origin)
+            self.send_header("Vary", "Origin")
+            self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+            self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-API-Key")
         self.end_headers()
 
     def do_GET(self):
@@ -88,27 +113,31 @@ class FIMHttpHandler(http.server.SimpleHTTPRequestHandler):
         path = parsed.path
         query = parse_qs(parsed.query)
 
-        # Allow unauthenticated health check
+        # Allow unauthenticated health check without CORS headers
         if path == "/health" or path == "/api/health":
-            self._send_json(200, {"status": "HEALTHY", "version": "2.1.0", "timestamp": time.time()})
+            self._send_json(200, {"status": "HEALTHY", "version": "2.2.0", "timestamp": time.time()}, include_cors=False)
             return
 
-        # Static dashboard assets (allow loading UI HTML, UI requests API with token)
-        if path == "/" or path == "/index.html":
-            index_file = self.web_dir / "index.html"
-            if index_file.exists():
-                content = index_file.read_bytes()
+        # Static dashboard assets (allow loading UI HTML/CSS/JS; UI authenticates API requests via headers)
+        if path in ["/", "/index.html", "/styles.css", "/dashboard.js"]:
+            filename = "index.html" if path in ["/", "/index.html"] else path.lstrip("/")
+            static_file = self.web_dir / filename
+            if static_file.exists():
+                content = static_file.read_bytes()
+                mime = "text/html; charset=utf-8" if filename.endswith(".html") else (
+                    "text/css; charset=utf-8" if filename.endswith(".css") else "application/javascript; charset=utf-8"
+                )
                 self.send_response(200)
-                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Content-Type", mime)
                 self.send_header("Content-Length", str(len(content)))
                 self.end_headers()
                 self.wfile.write(content)
                 return
 
-        # All API endpoints require authentication
+        # All API endpoints require header authentication
         if not self._check_auth():
             self._send_json(401, {
-                "error": "Unauthorized. Provide Authorization: Bearer <token>, X-API-Key: <token>, or ?token=<token>."
+                "error": "Unauthorized. Provide Authorization: Bearer <token> or X-API-Key: <token> HTTP header."
             })
             return
 
@@ -184,7 +213,7 @@ class FIMHttpHandler(http.server.SimpleHTTPRequestHandler):
         path = parsed.path
 
         if not self._check_auth():
-            self._send_json(401, {"error": "Unauthorized. Provide Authorization header or X-API-Key."})
+            self._send_json(401, {"error": "Unauthorized. Provide Authorization: Bearer <token> or X-API-Key: <token>."})
             return
 
         content_len = int(self.headers.get("Content-Length", 0))
@@ -258,8 +287,15 @@ def run_server(
     """
     Starts the standalone FIM API and Dashboard server.
     Refuses non-loopback bind by default unless allow_remote is explicitly set.
+    Refuses wildcard CORS on non-loopback interfaces.
     """
     cfg = config or ConfigManager()
+    allowed_origins = cfg.get("api.allowed_origins", [
+        "http://localhost:8000",
+        "http://127.0.0.1:8000",
+        "http://localhost",
+        "http://127.0.0.1"
+    ])
 
     # Bind security check
     if host not in LOOPBACK_HOSTS and not allow_remote and not cfg.get("api.allow_remote", False):
@@ -268,11 +304,17 @@ def run_server(
             f"Exposing the FIM management API externally requires explicit '--allow-remote' flag and configured authentication."
         )
 
+    if host not in LOOPBACK_HOSTS and "*" in allowed_origins:
+        raise PermissionError("Wildcard CORS ('*') is not allowed on non-loopback interfaces.")
+
     db = DatabaseManager(cfg.db_path)
     b_mgr = BaselineManager(cfg, db)
     comp = IntegrityComparator(cfg, db)
     web_dir = Path(__file__).resolve().parent.parent / "web"
     api_token = resolve_api_token(cfg)
+
+    if len(api_token) < 32:
+        logger.warning("API token is shorter than 32 characters — consider generating a stronger token.")
 
     FIMHttpHandler.config = cfg
     FIMHttpHandler.db = db
@@ -285,14 +327,12 @@ def run_server(
     socketserver.ThreadingTCPServer.daemon_threads = True
     with socketserver.ThreadingTCPServer((host, port), FIMHttpHandler) as httpd:
         print(f"\n=======================================================")
-        print(f" 🛡️  FIM v2.1 REST API & Web Dashboard Running (Multi-threaded)")
+        print(f" 🛡️  FIM v2.2 REST API & Web Dashboard Running (Multi-threaded)")
         print(f" URL: http://{host}:{port}/")
-        print(f" API Token (Bearer/X-API-Key) : {api_token}")
-        print(f" Download HTML Report : http://{host}:{port}/api/reports/html?token={api_token}")
-        print(f" Download CSV Report  : http://{host}:{port}/api/reports/csv?token={api_token}")
-        print(f" Download JSON Report : http://{host}:{port}/api/reports/json?token={api_token}")
-        print(f" Health Check         : http://{host}:{port}/health")
-        print(f" Prometheus Metrics   : http://{host}:{port}/metrics?token={api_token}")
+        print(f" API Token (Authorization: Bearer <token> / X-API-Key: <token>)")
+        print(f" Token: {api_token}")
+        print(f" Health Check: http://{host}:{port}/health")
+        print(f" Prometheus Metrics: curl -H 'Authorization: Bearer {api_token}' http://{host}:{port}/metrics")
         print(f"=======================================================\n")
         try:
             httpd.serve_forever()
