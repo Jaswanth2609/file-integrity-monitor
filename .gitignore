@@ -4,5 +4,5 @@ venv/
 .env
 *.db
 *.sqlite3
-reports/
+/reports/
 config/config.yaml
