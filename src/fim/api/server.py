@@ -88,12 +88,12 @@ class FIMHttpHandler(http.server.SimpleHTTPRequestHandler):
 
         # Check Authorization header: Bearer <token>
         auth = self.headers.get("Authorization", "")
-        if auth.startswith("Bearer ") and auth[7:].strip() == self.api_token:
+        if auth.startswith("Bearer ") and secrets.compare_digest(auth[7:].strip(), self.api_token):
             return True
 
         # Check X-API-Key header
         api_key = self.headers.get("X-API-Key", "")
-        if api_key.strip() == self.api_token:
+        if secrets.compare_digest(api_key.strip(), self.api_token):
             return True
 
         return False
