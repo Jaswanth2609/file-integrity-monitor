@@ -12,27 +12,36 @@ import stat
 import tempfile
 import time
 import unittest
+import sys
 from pathlib import Path
 
-from src.fim.alerts.manager import AlertManager
-from src.fim.api.server import FIMHttpHandler, resolve_api_token
-from src.fim.config import ConfigManager
-from src.fim.core.baseline import BaselineManager
-from src.fim.core.comparator import IntegrityComparator
-from src.fim.core.hasher import HashEngine
-from src.fim.core.rules import ChangeType, RuleEngine, Severity
-from src.fim.crypto.anchor import ChainAnchorManager
-from src.fim.crypto.asymmetric import AsymmetricEngine
-from src.fim.crypto.entropy import calculate_shannon_entropy, validate_secret_entropy, load_secure_key_file
-from src.fim.errors import BaselineTamperedError, FileNotFoundError_
-from src.fim.intel.base import IntelReport, Verdict
-from src.fim.intel.ratelimit import TokenBucketRateLimiter, QuotaTracker
-from src.fim.intel.virustotal import VirusTotalClient
-from src.fim.intel.yara_scanner import YaraEngine
-from src.fim.logging import setup_logger, JSONLogFormatter
-from src.fim.reports.generator import ReportGenerator
-from src.fim.storage.audit_chain import AuditChain
-from src.fim.storage.db import DatabaseManager
+# Ensure src/ is on sys.path
+_repo_root = Path(__file__).resolve().parent.parent
+_src_dir = _repo_root / "src"
+if str(_src_dir) not in sys.path:
+    sys.path.insert(0, str(_src_dir))
+if str(_repo_root) not in sys.path:
+    sys.path.insert(0, str(_repo_root))
+
+from fim.alerts.manager import AlertManager
+from fim.api.server import FIMHttpHandler, resolve_api_token
+from fim.config import ConfigManager
+from fim.core.baseline import BaselineManager
+from fim.core.comparator import IntegrityComparator
+from fim.core.hasher import HashEngine
+from fim.core.rules import ChangeType, RuleEngine, Severity
+from fim.crypto.anchor import ChainAnchorManager
+from fim.crypto.asymmetric import AsymmetricEngine
+from fim.crypto.entropy import calculate_shannon_entropy, validate_secret_entropy, load_secure_key_file
+from fim.errors import BaselineTamperedError, FileNotFoundError_
+from fim.intel.base import IntelReport, Verdict
+from fim.intel.ratelimit import TokenBucketRateLimiter, QuotaTracker
+from fim.intel.virustotal import VirusTotalClient
+from fim.intel.yara_scanner import YaraEngine
+from fim.logging import setup_logger, JSONLogFormatter
+from fim.reports.generator import ReportGenerator
+from fim.storage.audit_chain import AuditChain
+from fim.storage.db import DatabaseManager
 
 class TestFIMv2(unittest.TestCase):
     def setUp(self):
@@ -494,7 +503,7 @@ class TestFIMv2(unittest.TestCase):
 
     def test_tc032_non_loopback_bind_refusal(self):
         """TC-032: run_server refuses non-loopback bind address without explicit allow_remote flag."""
-        from src.fim.api.server import run_server
+        from fim.api.server import run_server
         with self.assertRaises(PermissionError) as ctx:
             run_server(host="0.0.0.0", port=9999, config=self.config, allow_remote=False)
         self.assertIn("SECURITY REFUSAL", str(ctx.exception))
@@ -582,7 +591,7 @@ class TestFIMv2(unittest.TestCase):
 
     def test_tc040_live_monitor_verifies_baseline_and_alerts_on_tamper(self):
         """TC-040: LiveMonitor verifies baseline signature on change events and dispatches alert on tamper."""
-        from src.fim.core.monitor import LiveMonitor
+        from fim.core.monitor import LiveMonitor
         test_file = Path(self.test_dir) / "monitored.txt"
         test_file.write_text("initial content", encoding="utf-8")
 
@@ -625,7 +634,7 @@ class TestFIMv2(unittest.TestCase):
 
     def test_tc041_external_anchor_and_forged_append_verification(self):
         """TC-041: AuditChain validates anchored index so forged appends after anchor fail, and exports externally."""
-        from src.fim.storage.audit_chain import AuditChain
+        from fim.storage.audit_chain import AuditChain
         ext_anchor = Path(self.test_dir) / "external_worm" / "chain_anchor"
         chain_db = Path(self.test_dir) / "test_chain.db"
         chain = AuditChain(conn_or_path=chain_db, external_anchor_path=ext_anchor)
@@ -691,7 +700,7 @@ class TestFIMv2(unittest.TestCase):
     def test_tc042_audit_chain_concurrent_writers_no_race(self):
         """TC-042: Concurrent writers to AuditChain append in immediate transactions without chain forks."""
         import threading
-        from src.fim.storage.audit_chain import AuditChain
+        from fim.storage.audit_chain import AuditChain
         race_db = Path(self.test_dir) / "race_test.db"
         chain = AuditChain(conn_or_path=race_db)
 

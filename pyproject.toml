@@ -61,7 +61,7 @@ dev = [
 ]
 
 [project.scripts]
-fim = "src.fim.cli.commands:main_cli"
+fim = "fim.cli.commands:main_cli"
 
 [project.urls]
 Homepage = "https://github.com/Jaswanth2609/file-integrity-monitor"
@@ -69,8 +69,7 @@ Repository = "https://github.com/Jaswanth2609/file-integrity-monitor"
 Issues = "https://github.com/Jaswanth2609/file-integrity-monitor/issues"
 
 [tool.setuptools.packages.find]
-where = ["."]
-include = ["src*", "fim*"]
+where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
