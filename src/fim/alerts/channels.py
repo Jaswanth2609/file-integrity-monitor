@@ -7,11 +7,11 @@ import json
 import logging
 import smtplib
 import socket
-import sys
 import urllib.request
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from typing import Any, Dict, Optional
+
 
 class ConsoleAlertChannel:
     def send(self, alert_data: Dict[str, Any]) -> bool:
@@ -19,10 +19,15 @@ class ConsoleAlertChannel:
         path = alert_data.get("path", "")
         desc = alert_data.get("description", "")
         # ANSI colors
-        color = "\033[91m" if sev in ("CRITICAL", "HIGH") else ("\033[93m" if sev == "MEDIUM" else "\033[96m")
+        color = (
+            "\033[91m"
+            if sev in ("CRITICAL", "HIGH")
+            else ("\033[93m" if sev == "MEDIUM" else "\033[96m")
+        )
         reset = "\033[0m"
         print(f"\n{color}[!] FIM ALERT [{sev}] {path}{reset}\n    {desc}", flush=True)
         return True
+
 
 class LogFileAlertChannel:
     def __init__(self, logger_instance: Optional[logging.Logger] = None):
@@ -39,6 +44,7 @@ class LogFileAlertChannel:
             self.logger.info(msg)
         return True
 
+
 class SlackAlertChannel:
     def __init__(self, webhook_url: str):
         self.webhook_url = webhook_url
@@ -47,26 +53,55 @@ class SlackAlertChannel:
         if not self.webhook_url:
             return False
         sev = alert_data.get("severity", "INFO")
-        color = "#FF0000" if sev in ("CRITICAL", "HIGH") else ("#FFA500" if sev == "MEDIUM" else "#36A64F")
+        color = (
+            "#FF0000"
+            if sev in ("CRITICAL", "HIGH")
+            else ("#FFA500" if sev == "MEDIUM" else "#36A64F")
+        )
         payload = {
-            "attachments": [{
-                "color": color,
-                "title": f"🚨 FIM Alert: {sev} - {alert_data.get('change_type', 'CHANGE')}",
-                "fields": [
-                    {"title": "File Path", "value": f"`{alert_data.get('path')}`", "short": False},
-                    {"title": "Details", "value": alert_data.get("description", ""), "short": False},
-                    {"title": "MITRE ATT&CK", "value": alert_data.get("attack_id", "N/A"), "short": True},
-                    {"title": "New Hash", "value": f"`{alert_data.get('new_hash', 'N/A')[:16]}...`" if alert_data.get('new_hash') else "N/A", "short": True}
-                ]
-            }]
+            "attachments": [
+                {
+                    "color": color,
+                    "title": f"🚨 FIM Alert: {sev} - {alert_data.get('change_type', 'CHANGE')}",
+                    "fields": [
+                        {
+                            "title": "File Path",
+                            "value": f"`{alert_data.get('path')}`",
+                            "short": False,
+                        },
+                        {
+                            "title": "Details",
+                            "value": alert_data.get("description", ""),
+                            "short": False,
+                        },
+                        {
+                            "title": "MITRE ATT&CK",
+                            "value": alert_data.get("attack_id", "N/A"),
+                            "short": True,
+                        },
+                        {
+                            "title": "New Hash",
+                            "value": (
+                                f"`{alert_data.get('new_hash', 'N/A')[:16]}...`"
+                                if alert_data.get("new_hash")
+                                else "N/A"
+                            ),
+                            "short": True,
+                        },
+                    ],
+                }
+            ]
         }
         try:
             data = json.dumps(payload).encode("utf-8")
-            req = urllib.request.Request(self.webhook_url, data=data, headers={"Content-Type": "application/json"})
-            with urllib.request.urlopen(req, timeout=10) as resp:
+            req = urllib.request.Request(
+                self.webhook_url, data=data, headers={"Content-Type": "application/json"}
+            )
+            with urllib.request.urlopen(req, timeout=10) as resp:  # nosec B310
                 return resp.status == 200
         except Exception:
             return False
+
 
 class TelegramAlertChannel:
     def __init__(self, bot_token: str, chat_id: str):
@@ -88,11 +123,14 @@ class TelegramAlertChannel:
         payload = {"chat_id": self.chat_id, "text": text, "parse_mode": "Markdown"}
         try:
             data = json.dumps(payload).encode("utf-8")
-            req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
-            with urllib.request.urlopen(req, timeout=10) as resp:
+            req = urllib.request.Request(
+                url, data=data, headers={"Content-Type": "application/json"}
+            )
+            with urllib.request.urlopen(req, timeout=10) as resp:  # nosec B310
                 return resp.status == 200
         except Exception:
             return False
+
 
 class WebhookAlertChannel:
     def __init__(self, url: str, headers: Optional[Dict[str, str]] = None):
@@ -105,10 +143,11 @@ class WebhookAlertChannel:
         try:
             data = json.dumps(alert_data).encode("utf-8")
             req = urllib.request.Request(self.url, data=data, headers=self.headers)
-            with urllib.request.urlopen(req, timeout=10) as resp:
+            with urllib.request.urlopen(req, timeout=10) as resp:  # nosec B310
                 return resp.status in (200, 201, 202, 204)
         except Exception:
             return False
+
 
 class EmailAlertChannel:
     def __init__(self, config: Dict[str, Any]):
@@ -147,6 +186,7 @@ class EmailAlertChannel:
         except Exception:
             return False
 
+
 class SyslogAlertChannel:
     def __init__(self, host: str = "127.0.0.1", port: int = 514, protocol: str = "udp"):
         self.host = host
@@ -168,6 +208,8 @@ class SyslogAlertChannel:
         except Exception:
             return False
 
+
 def time_iso():
     import datetime
+
     return datetime.datetime.now(datetime.timezone.utc).isoformat()

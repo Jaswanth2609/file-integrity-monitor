@@ -15,17 +15,16 @@ import stat
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple, Union
+from typing import Any, Dict, List, Optional, Set, Union
 
 from .hasher import HashEngine
 from ..config import ConfigManager
 from ..crypto.asymmetric import AsymmetricEngine
-from ..crypto.entropy import load_secure_key_file
 from ..errors import BaselineTamperedError, FileNotFoundError_
-from ..storage.audit_chain import AuditChain
 from ..storage.db import DatabaseManager
 
 logger = logging.getLogger("fim.baseline")
+
 
 @dataclass
 class BaselineEntry:
@@ -53,8 +52,9 @@ class BaselineEntry:
             "ctime": self.ctime,
             "inode": self.inode,
             "is_symlink": self.is_symlink,
-            "symlink_target": self.symlink_target
+            "symlink_target": self.symlink_target,
         }
+
 
 @dataclass
 class BaselineManifest:
@@ -79,19 +79,22 @@ class BaselineManifest:
             "version": self.version,
             "file_count": len(self.files),
             "skipped": self.skipped,
-            "files": {p: entry.to_dict() for p, entry in self.files.items()}
+            "files": {p: entry.to_dict() for p, entry in self.files.items()},
         }
+
 
 class BaselineManager:
     """Manages creation, loading, signing, verification, and diffing of baseline profiles."""
 
-    def __init__(self, config: Optional[ConfigManager] = None, db: Optional[DatabaseManager] = None):
+    def __init__(
+        self, config: Optional[ConfigManager] = None, db: Optional[DatabaseManager] = None
+    ):
         self.config = config or ConfigManager()
         self.db = db or DatabaseManager(self.config.db_path)
         self.hasher = HashEngine(
             chunk_size=self.config.chunk_size_bytes,
             default_algo=self.config.get("hashing.default_algorithm", "sha256"),
-            max_workers=int(self.config.get("hashing.max_workers", 4))
+            max_workers=int(self.config.get("hashing.max_workers", 4)),
         )
 
     @staticmethod
@@ -99,7 +102,9 @@ class BaselineManager:
         """Returns the first 8 hex characters of sha256(key)."""
         return hashlib.sha256(key.encode("utf-8")).hexdigest()[:8]
 
-    def _get_canonical_bytes(self, files: List[Dict[str, Any]], legacy_format: bool = False) -> bytes:
+    def _get_canonical_bytes(
+        self, files: List[Dict[str, Any]], legacy_format: bool = False
+    ) -> bytes:
         sorted_files = sorted(files, key=lambda x: x["path"])
         payload_parts = []
         for f in sorted_files:
@@ -125,12 +130,16 @@ class BaselineManager:
         signing_type: str = "hmac",
         secret_key: Optional[str] = None,
         private_key_path: Optional[Union[str, Path]] = None,
-        legacy_format: bool = False
+        legacy_format: bool = False,
     ) -> str:
         """Calculates signature (Ed25519 asymmetric or HMAC-SHA256) across sorted canonical records."""
         canonical_bytes = self._get_canonical_bytes(files, legacy_format=legacy_format)
         if (signing_type == "ed25519" or private_key_path) and AsymmetricEngine.is_available():
-            priv_p = private_key_path or self.config.get("signing.private_key_path") or Path("~/.fim/fim_ed25519").expanduser()
+            priv_p = (
+                private_key_path
+                or self.config.get("signing.private_key_path")
+                or Path("~/.fim/fim_ed25519").expanduser()
+            )
             sig_hex = AsymmetricEngine.sign_payload(canonical_bytes, priv_p)
             return f"ed25519:{sig_hex}"
         else:
@@ -141,9 +150,11 @@ class BaselineManager:
         self,
         files: List[Dict[str, Any]],
         secret_key: Optional[str] = None,
-        legacy_format: bool = False
+        legacy_format: bool = False,
     ) -> str:
-        return self._calculate_signature(files, signing_type="hmac", secret_key=secret_key, legacy_format=legacy_format)
+        return self._calculate_signature(
+            files, signing_type="hmac", secret_key=secret_key, legacy_format=legacy_format
+        )
 
     def _load_fimignore(self, root_dir: Path) -> List[str]:
         """Loads glob ignore patterns from .fimignore if present in root_dir."""
@@ -159,7 +170,9 @@ class BaselineManager:
                 logger.debug(f"Could not read .fimignore at {ignore_path}: {e}")
         return patterns
 
-    def _should_exclude(self, path: Path, exclude_patterns: List[str], include_patterns: List[str]) -> bool:
+    def _should_exclude(
+        self, path: Path, exclude_patterns: List[str], include_patterns: List[str]
+    ) -> bool:
         """Determines if a path matches glob exclusion or inclusion filters."""
         name = path.name
         path_str = str(path)
@@ -171,7 +184,10 @@ class BaselineManager:
                 return True
 
         if include_patterns and include_patterns != ["*"]:
-            matched = any(fnmatch.fnmatch(name, pat) or fnmatch.fnmatch(path_str, pat) for pat in include_patterns)
+            matched = any(
+                fnmatch.fnmatch(name, pat) or fnmatch.fnmatch(path_str, pat)
+                for pat in include_patterns
+            )
             if not matched:
                 return True
 
@@ -181,11 +197,19 @@ class BaselineManager:
         self,
         root_paths: List[Union[str, Path]],
         exclude_patterns: Optional[List[str]] = None,
-        include_patterns: Optional[List[str]] = None
+        include_patterns: Optional[List[str]] = None,
     ) -> List[Path]:
         """Gathers all files from target directories respecting .fimignore and glob exclusions."""
-        base_excludes = list(exclude_patterns if exclude_patterns is not None else self.config.get("baseline.exclude_patterns", []))
-        includes = include_patterns if include_patterns is not None else self.config.get("baseline.include_patterns", ["*"])
+        base_excludes = list(
+            exclude_patterns
+            if exclude_patterns is not None
+            else self.config.get("baseline.exclude_patterns", [])
+        )
+        includes = (
+            include_patterns
+            if include_patterns is not None
+            else self.config.get("baseline.include_patterns", ["*"])
+        )
 
         collected: Set[Path] = set()
 
@@ -201,12 +225,18 @@ class BaselineManager:
                 if not self._should_exclude(rp, current_excludes, includes):
                     collected.add(rp)
             elif rp.is_dir():
-                for root_dir, dirs, files in os.walk(rp, followlinks=bool(self.config.get("hashing.follow_symlinks", False))):
+                for root_dir, dirs, files in os.walk(
+                    rp, followlinks=bool(self.config.get("hashing.follow_symlinks", False))
+                ):
                     current_dir_p = Path(root_dir)
                     dir_fimignore = self._load_fimignore(current_dir_p)
                     active_excludes = current_excludes + dir_fimignore
 
-                    dirs[:] = [d for d in dirs if not self._should_exclude(current_dir_p / d, active_excludes, includes)]
+                    dirs[:] = [
+                        d
+                        for d in dirs
+                        if not self._should_exclude(current_dir_p / d, active_excludes, includes)
+                    ]
                     for fname in files:
                         fp = current_dir_p / fname
                         if not self._should_exclude(fp, active_excludes, includes):
@@ -241,7 +271,7 @@ class BaselineManager:
         include_patterns: Optional[List[str]] = None,
         progress_callback: Optional[Any] = None,
         signing_type: str = "hmac",
-        private_key_path: Optional[Union[str, Path]] = None
+        private_key_path: Optional[Union[str, Path]] = None,
     ) -> BaselineManifest:
         """
         Generates a new signed baseline for given paths and saves to database.
@@ -279,7 +309,7 @@ class BaselineManager:
                     "ctime": getattr(st, "st_ctime", 0.0),
                     "inode": getattr(st, "st_ino", 0),
                     "is_symlink": is_link,
-                    "symlink_target": link_target
+                    "symlink_target": link_target,
                 }
                 file_entries.append(entry)
                 if progress_callback:
@@ -292,12 +322,14 @@ class BaselineManager:
                     progress_callback(idx, total, f"[SKIPPED] {fp}")
 
         signature = self._calculate_signature(
-            file_entries,
-            signing_type=signing_type,
-            private_key_path=private_key_path
+            file_entries, signing_type=signing_type, private_key_path=private_key_path
         )
         root_strs = [str(Path(p).expanduser().resolve()) for p in paths]
-        key_fp = self.calculate_key_fingerprint(self.config.secret_key) if signing_type == "hmac" else "ed25519"
+        key_fp = (
+            self.calculate_key_fingerprint(self.config.secret_key)
+            if signing_type == "hmac"
+            else "ed25519"
+        )
 
         # Persist in DB
         self.db.save_baseline(
@@ -306,7 +338,7 @@ class BaselineManager:
             algo=selected_algo,
             signature=signature,
             files_data=file_entries,
-            key_fingerprint=key_fp
+            key_fingerprint=key_fp,
         )
 
         manifest_files = {
@@ -321,7 +353,7 @@ class BaselineManager:
                 ctime=f.get("ctime", 0.0),
                 inode=f.get("inode", 0),
                 is_symlink=f.get("is_symlink", False),
-                symlink_target=f.get("symlink_target")
+                symlink_target=f.get("symlink_target"),
             )
             for f in file_entries
         }
@@ -334,7 +366,7 @@ class BaselineManager:
             signature=signature,
             files=manifest_files,
             key_fingerprint=key_fp,
-            skipped=skipped_files
+            skipped=skipped_files,
         )
 
         # Trigger backup hook if configured
@@ -348,7 +380,7 @@ class BaselineManager:
         verify: bool = True,
         accept_migration: bool = False,
         public_key_path: Optional[Union[str, Path]] = None,
-        old_key: Optional[str] = None
+        old_key: Optional[str] = None,
     ) -> BaselineManifest:
         """
         Loads a baseline by name and verifies signature (HMAC or Ed25519) against tampering.
@@ -365,7 +397,11 @@ class BaselineManager:
             if recorded_sig.startswith("ed25519:"):
                 # Asymmetric Ed25519 verification
                 sig_hex = recorded_sig.split(":", 1)[1]
-                pub_p = public_key_path or self.config.get("signing.public_key_path") or Path("~/.fim/fim_ed25519.pub").expanduser()
+                pub_p = (
+                    public_key_path
+                    or self.config.get("signing.public_key_path")
+                    or Path("~/.fim/fim_ed25519.pub").expanduser()
+                )
                 canonical_bytes = self._get_canonical_bytes(files_data)
                 valid = AsymmetricEngine.verify_payload(canonical_bytes, sig_hex, pub_p)
                 if not valid:
@@ -387,19 +423,29 @@ class BaselineManager:
                 # If direct verification failed, test user-supplied old_key for rotation/migration
                 if not valid and old_key:
                     old_key_sig = self._calculate_hmac_signature(files_data, secret_key=old_key)
-                    old_key_sig_leg = self._calculate_hmac_signature(files_data, secret_key=old_key, legacy_format=True)
-                    if hmac.compare_digest(recorded_sig, old_key_sig) or hmac.compare_digest(recorded_sig, old_key_sig_leg):
+                    old_key_sig_leg = self._calculate_hmac_signature(
+                        files_data, secret_key=old_key, legacy_format=True
+                    )
+                    if hmac.compare_digest(recorded_sig, old_key_sig) or hmac.compare_digest(
+                        recorded_sig, old_key_sig_leg
+                    ):
                         if accept_migration:
                             new_sig = self._calculate_hmac_signature(files_data)
                             new_fp = self.calculate_key_fingerprint(self.config.secret_key)
                             with self.db.get_connection() as conn:
-                                conn.execute("UPDATE baselines SET signature = ?, key_fingerprint = ? WHERE id = ?", (new_sig, new_fp, raw["id"]))
-                            self.db.audit.append_event("BASELINE_MIGRATED", {
-                                "name": name,
-                                "old_sig": recorded_sig,
-                                "new_sig": new_sig,
-                                "method": "explicit_key_migration"
-                            })
+                                conn.execute(
+                                    "UPDATE baselines SET signature = ?, key_fingerprint = ? WHERE id = ?",
+                                    (new_sig, new_fp, raw["id"]),
+                                )
+                            self.db.audit.append_event(
+                                "BASELINE_MIGRATED",
+                                {
+                                    "name": name,
+                                    "old_sig": recorded_sig,
+                                    "new_sig": new_sig,
+                                    "method": "explicit_key_migration",
+                                },
+                            )
                             self.db.remove_rotated_key(old_key)
                             recorded_sig = new_sig
                             valid = True
@@ -435,7 +481,7 @@ class BaselineManager:
                 ctime=f.get("ctime", 0.0),
                 inode=f.get("inode", 0),
                 is_symlink=bool(f.get("symlink_target")),
-                symlink_target=f.get("symlink_target") or None
+                symlink_target=f.get("symlink_target") or None,
             )
             for f in files_data
         }
@@ -448,7 +494,7 @@ class BaselineManager:
             signature=recorded_sig,
             key_fingerprint=raw.get("key_fingerprint", ""),
             files=manifest_files,
-            version=raw.get("version", 1)
+            version=raw.get("version", 1),
         )
 
     def diff_baselines(self, name_a: str, name_b: str) -> Dict[str, Any]:
@@ -466,11 +512,9 @@ class BaselineManager:
         modified = []
         for p in common:
             if base_a.files[p].hash != base_b.files[p].hash:
-                modified.append({
-                    "path": p,
-                    "old_hash": base_a.files[p].hash,
-                    "new_hash": base_b.files[p].hash
-                })
+                modified.append(
+                    {"path": p, "old_hash": base_a.files[p].hash, "new_hash": base_b.files[p].hash}
+                )
 
         return {
             "baseline_a": name_a,
@@ -480,7 +524,7 @@ class BaselineManager:
             "modified_count": len(modified),
             "added": added,
             "deleted": deleted,
-            "modified": modified
+            "modified": modified,
         }
 
     def migrate_baseline(self, name: str, old_key: Optional[str] = None) -> bool:
@@ -502,26 +546,38 @@ class BaselineManager:
             return True
 
         if not old_key:
-            raise ValueError(f"Migrating baseline '{name}' requires supplying previous key via --old-key.")
+            raise ValueError(
+                f"Migrating baseline '{name}' requires supplying previous key via --old-key."
+            )
 
         # Verify old key matches recorded signature
         old_sig = self._calculate_hmac_signature(files_data, secret_key=old_key)
-        old_sig_leg = self._calculate_hmac_signature(files_data, secret_key=old_key, legacy_format=True)
-        if not hmac.compare_digest(recorded_sig, old_sig) and not hmac.compare_digest(recorded_sig, old_sig_leg):
+        old_sig_leg = self._calculate_hmac_signature(
+            files_data, secret_key=old_key, legacy_format=True
+        )
+        if not hmac.compare_digest(recorded_sig, old_sig) and not hmac.compare_digest(
+            recorded_sig, old_sig_leg
+        ):
             raise BaselineTamperedError(
                 f"Cannot migrate baseline '{name}': supplied old key does not match recorded signature! Possible unauthorized tampering."
             )
 
         new_fp = self.calculate_key_fingerprint(self.config.secret_key)
         with self.db.get_connection() as conn:
-            conn.execute("UPDATE baselines SET signature = ?, key_fingerprint = ? WHERE id = ?", (current_sig, new_fp, raw["id"]))
+            conn.execute(
+                "UPDATE baselines SET signature = ?, key_fingerprint = ? WHERE id = ?",
+                (current_sig, new_fp, raw["id"]),
+            )
 
-        self.db.audit.append_event("BASELINE_MIGRATED", {
-            "name": name,
-            "old_sig": recorded_sig,
-            "new_sig": current_sig,
-            "fingerprint": new_fp,
-            "action": "explicit_migrate"
-        })
+        self.db.audit.append_event(
+            "BASELINE_MIGRATED",
+            {
+                "name": name,
+                "old_sig": recorded_sig,
+                "new_sig": current_sig,
+                "fingerprint": new_fp,
+                "action": "explicit_migrate",
+            },
+        )
         self.db.remove_rotated_key(old_key)
         return True

@@ -3,15 +3,15 @@ Real-time Filesystem Event Monitor and Scheduler for FIM v2.0.
 Supports event debouncing, scheduled re-verification, threat intel enrichment, and alerting.
 """
 
-import queue
 import threading
 import time
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Set, Union
+from typing import Any, Callable, Dict, List, Optional, Union
 
 try:
     from watchdog.observers import Observer
-    from watchdog.events import FileSystemEventHandler, FileSystemEvent
+    from watchdog.events import FileSystemEventHandler
+
     HAVE_WATCHDOG = True
 except ImportError:
     HAVE_WATCHDOG = False
@@ -25,6 +25,7 @@ from ..config import ConfigManager
 from ..errors import BaselineTamperedError
 from ..intel.virustotal import VirusTotalClient
 from ..storage.db import DatabaseManager
+
 
 class DebounceEventQueue:
     """Queues and coalesces rapid-fire filesystem events on the same file path."""
@@ -47,6 +48,7 @@ class DebounceEventQueue:
                     ready.append(path)
                     del self.events[path]
         return ready
+
 
 class LiveMonitor:
     """Monitors configured baseline directories in real time."""
@@ -111,9 +113,7 @@ class LiveMonitor:
         else:
             # Fallback polling watcher thread
             self._polling_thread = threading.Thread(
-                target=self._polling_loop,
-                args=(baseline.root_paths,),
-                daemon=True
+                target=self._polling_loop, args=(baseline.root_paths,), daemon=True
             )
             self._polling_thread.start()
 
@@ -186,7 +186,7 @@ class LiveMonitor:
                 "change_type": "TAMPERED",
                 "severity": Severity.CRITICAL.value,
                 "description": f"Baseline profile '{self.profile_name}' integrity verification failed during live monitoring: {e}",
-                "attack_id": "T1565.001"
+                "attack_id": "T1565.001",
             }
             self.alert_mgr.dispatch(finding_data)
             if self.alert_callback:
@@ -200,14 +200,16 @@ class LiveMonitor:
         if not p.exists():
             if b_entry:
                 # File deleted
-                sev, attack_id, desc = self.rule_engine.classify_change(path_str, ChangeType.DELETED)
+                sev, attack_id, desc = self.rule_engine.classify_change(
+                    path_str, ChangeType.DELETED
+                )
                 finding_data = {
                     "path": path_str,
                     "change_type": "DELETED",
                     "severity": sev.value,
                     "description": desc,
                     "old_hash": b_entry.hash,
-                    "attack_id": attack_id
+                    "attack_id": attack_id,
                 }
                 self.alert_mgr.dispatch(finding_data)
                 if self.alert_callback:
@@ -215,7 +217,7 @@ class LiveMonitor:
             return
 
         try:
-            st = p.stat()
+            p.stat()
             h_dict = self.hasher.calculate_hashes(p, algorithms=[baseline.algo])
             new_hash = h_dict.get(baseline.algo, "")
         except Exception:
@@ -230,14 +232,16 @@ class LiveMonitor:
                 "severity": sev.value,
                 "description": desc,
                 "new_hash": new_hash,
-                "attack_id": attack_id
+                "attack_id": attack_id,
             }
             # Optional Threat Intel lookup on new file
             if self.config.vt_api_key and new_hash:
                 intel = self.vt_client.query_hash(new_hash)
                 if intel.verdict in ("MALICIOUS", "SUSPICIOUS"):
                     finding_data["severity"] = "CRITICAL"
-                    finding_data["description"] += f" (Threat Intel: {intel.verdict} - {intel.detection_ratio})"
+                    finding_data[
+                        "description"
+                    ] += f" (Threat Intel: {intel.verdict} - {intel.detection_ratio})"
 
             self.alert_mgr.dispatch(finding_data)
             if self.alert_callback:
@@ -253,14 +257,16 @@ class LiveMonitor:
                 "description": desc,
                 "old_hash": b_entry.hash,
                 "new_hash": new_hash,
-                "attack_id": attack_id
+                "attack_id": attack_id,
             }
             # Threat Intel lookup on modified file
             if self.config.vt_api_key and new_hash:
                 intel = self.vt_client.query_hash(new_hash)
                 if intel.verdict in ("MALICIOUS", "SUSPICIOUS"):
                     finding_data["severity"] = "CRITICAL"
-                    finding_data["description"] += f" (Threat Intel: {intel.verdict} - {intel.detection_ratio})"
+                    finding_data[
+                        "description"
+                    ] += f" (Threat Intel: {intel.verdict} - {intel.detection_ratio})"
 
             self.alert_mgr.dispatch(finding_data)
             if self.alert_callback:

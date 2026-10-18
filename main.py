@@ -21,9 +21,11 @@ if str(SRC_DIR) not in sys.path:
 
 from fim.cli.commands import main_cli
 
+
 def main():
     exit_code = main_cli()
     sys.exit(exit_code or 0)
+
 
 if __name__ == "__main__":
     main()

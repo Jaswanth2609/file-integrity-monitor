@@ -12,5 +12,5 @@ __all__ = [
     "validate_secret_entropy",
     "load_secure_key_file",
     "AsymmetricEngine",
-    "ChainAnchorManager"
+    "ChainAnchorManager",
 ]

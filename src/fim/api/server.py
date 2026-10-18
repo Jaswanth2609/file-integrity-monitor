@@ -13,18 +13,18 @@ import socketserver
 import stat
 import time
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 from urllib.parse import urlparse, parse_qs
 
 from ..config import ConfigManager
 from ..core.baseline import BaselineManager
 from ..core.comparator import IntegrityComparator
-from ..crypto.entropy import validate_secret_entropy
 from ..reports.generator import ReportGenerator
 from ..storage.db import DatabaseManager
 
 logger = logging.getLogger("fim.api")
 LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
+
 
 class FIMHttpHandler(http.server.SimpleHTTPRequestHandler):
     """Native standard library HTTP handler with REST API, Reports, and Dashboard routing."""
@@ -41,12 +41,15 @@ class FIMHttpHandler(http.server.SimpleHTTPRequestHandler):
         request_origin = self.headers.get("Origin", "")
         if not request_origin:
             return ""
-        allowed = self.config.get("api.allowed_origins", [
-            "http://localhost:8000",
-            "http://127.0.0.1:8000",
-            "http://localhost",
-            "http://127.0.0.1"
-        ])
+        allowed = self.config.get(
+            "api.allowed_origins",
+            [
+                "http://localhost:8000",
+                "http://127.0.0.1:8000",
+                "http://localhost",
+                "http://127.0.0.1",
+            ],
+        )
         if request_origin in allowed or "*" in allowed:
             return request_origin
         return ""
@@ -62,7 +65,9 @@ class FIMHttpHandler(http.server.SimpleHTTPRequestHandler):
                 self.send_header("Access-Control-Allow-Origin", origin)
                 self.send_header("Vary", "Origin")
                 self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-                self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-API-Key")
+                self.send_header(
+                    "Access-Control-Allow-Headers", "Content-Type, Authorization, X-API-Key"
+                )
         self.end_headers()
         self.wfile.write(payload)
 
@@ -105,7 +110,9 @@ class FIMHttpHandler(http.server.SimpleHTTPRequestHandler):
             self.send_header("Access-Control-Allow-Origin", origin)
             self.send_header("Vary", "Origin")
             self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-            self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-API-Key")
+            self.send_header(
+                "Access-Control-Allow-Headers", "Content-Type, Authorization, X-API-Key"
+            )
         self.end_headers()
 
     def do_GET(self):
@@ -115,7 +122,11 @@ class FIMHttpHandler(http.server.SimpleHTTPRequestHandler):
 
         # Allow unauthenticated health check without CORS headers
         if path == "/health" or path == "/api/health":
-            self._send_json(200, {"status": "HEALTHY", "version": "2.2.0", "timestamp": time.time()}, include_cors=False)
+            self._send_json(
+                200,
+                {"status": "HEALTHY", "version": "2.2.0", "timestamp": time.time()},
+                include_cors=False,
+            )
             return
 
         # Static dashboard assets (allow loading UI HTML/CSS/JS; UI authenticates API requests via headers)
@@ -124,8 +135,14 @@ class FIMHttpHandler(http.server.SimpleHTTPRequestHandler):
             static_file = self.web_dir / filename
             if static_file.exists():
                 content = static_file.read_bytes()
-                mime = "text/html; charset=utf-8" if filename.endswith(".html") else (
-                    "text/css; charset=utf-8" if filename.endswith(".css") else "application/javascript; charset=utf-8"
+                mime = (
+                    "text/html; charset=utf-8"
+                    if filename.endswith(".html")
+                    else (
+                        "text/css; charset=utf-8"
+                        if filename.endswith(".css")
+                        else "application/javascript; charset=utf-8"
+                    )
                 )
                 self.send_response(200)
                 self.send_header("Content-Type", mime)
@@ -136,9 +153,12 @@ class FIMHttpHandler(http.server.SimpleHTTPRequestHandler):
 
         # All API endpoints require header authentication
         if not self._check_auth():
-            self._send_json(401, {
-                "error": "Unauthorized. Provide Authorization: Bearer <token> or X-API-Key: <token> HTTP header."
-            })
+            self._send_json(
+                401,
+                {
+                    "error": "Unauthorized. Provide Authorization: Bearer <token> or X-API-Key: <token> HTTP header."
+                },
+            )
             return
 
         if path == "/metrics" or path == "/api/metrics":
@@ -150,7 +170,7 @@ class FIMHttpHandler(http.server.SimpleHTTPRequestHandler):
                 f"fim_baselines_total {total_b}",
                 "# HELP fim_up Status of FIM daemon",
                 "# TYPE fim_up gauge",
-                "fim_up 1"
+                "fim_up 1",
             ]
             payload = "\n".join(metrics).encode("utf-8")
             self.send_response(200)
@@ -170,7 +190,12 @@ class FIMHttpHandler(http.server.SimpleHTTPRequestHandler):
                 if limit < 0:
                     raise ValueError("limit must be non-negative")
             except (ValueError, TypeError):
-                self._send_json(400, {"error": f"Invalid 'limit' query parameter: '{raw_limit}'. Must be a non-negative integer."})
+                self._send_json(
+                    400,
+                    {
+                        "error": f"Invalid 'limit' query parameter: '{raw_limit}'. Must be a non-negative integer."
+                    },
+                )
                 return
             findings = self.db.get_unresolved_findings(limit=limit)
             self._send_json(200, {"findings": findings})
@@ -182,23 +207,27 @@ class FIMHttpHandler(http.server.SimpleHTTPRequestHandler):
                 if limit < 0:
                     raise ValueError("limit must be non-negative")
             except (ValueError, TypeError):
-                self._send_json(400, {"error": f"Invalid 'limit' query parameter: '{raw_limit}'. Must be a non-negative integer."})
+                self._send_json(
+                    400,
+                    {
+                        "error": f"Invalid 'limit' query parameter: '{raw_limit}'. Must be a non-negative integer."
+                    },
+                )
                 return
             valid, msg, count = self.db.audit.verify_integrity()
             events = self.db.audit.get_events(limit=limit)
-            self._send_json(200, {
-                "chain_valid": valid,
-                "message": msg,
-                "total_events": count,
-                "events": events
-            })
+            self._send_json(
+                200, {"chain_valid": valid, "message": msg, "total_events": count, "events": events}
+            )
 
         elif path == "/api/reports/html":
             profile = query.get("profile", ["default"])[0]
             try:
                 summary = self.comparator.check_baseline(profile_name=profile)
                 html_str = ReportGenerator.export_to_html(summary)
-                self._send_file_download(f"fim_report_{profile}.html", "text/html", html_str.encode("utf-8"))
+                self._send_file_download(
+                    f"fim_report_{profile}.html", "text/html", html_str.encode("utf-8")
+                )
             except Exception as e:
                 self._send_json(500, {"error": f"Failed to generate HTML report: {e}"})
 
@@ -207,7 +236,9 @@ class FIMHttpHandler(http.server.SimpleHTTPRequestHandler):
             try:
                 summary = self.comparator.check_baseline(profile_name=profile)
                 json_str = ReportGenerator.export_to_json(summary)
-                self._send_file_download(f"fim_report_{profile}.json", "application/json", json_str.encode("utf-8"))
+                self._send_file_download(
+                    f"fim_report_{profile}.json", "application/json", json_str.encode("utf-8")
+                )
             except Exception as e:
                 self._send_json(500, {"error": f"Failed to generate JSON report: {e}"})
 
@@ -216,7 +247,9 @@ class FIMHttpHandler(http.server.SimpleHTTPRequestHandler):
             try:
                 summary = self.comparator.check_baseline(profile_name=profile)
                 csv_str = ReportGenerator.export_to_csv(summary)
-                self._send_file_download(f"fim_report_{profile}.csv", "text/csv", csv_str.encode("utf-8"))
+                self._send_file_download(
+                    f"fim_report_{profile}.csv", "text/csv", csv_str.encode("utf-8")
+                )
             except Exception as e:
                 self._send_json(500, {"error": f"Failed to generate CSV report: {e}"})
 
@@ -230,7 +263,12 @@ class FIMHttpHandler(http.server.SimpleHTTPRequestHandler):
         path = parsed.path
 
         if not self._check_auth():
-            self._send_json(401, {"error": "Unauthorized. Provide Authorization: Bearer <token> or X-API-Key: <token>."})
+            self._send_json(
+                401,
+                {
+                    "error": "Unauthorized. Provide Authorization: Bearer <token> or X-API-Key: <token>."
+                },
+            )
             return
 
         raw_len = self.headers.get("Content-Length", "0")
@@ -243,9 +281,12 @@ class FIMHttpHandler(http.server.SimpleHTTPRequestHandler):
             return
 
         if content_len > self.MAX_REQUEST_BODY_BYTES:
-            self._send_json(413, {
-                "error": f"Request body too large ({content_len} bytes). Maximum allowed is {self.MAX_REQUEST_BODY_BYTES} bytes."
-            })
+            self._send_json(
+                413,
+                {
+                    "error": f"Request body too large ({content_len} bytes). Maximum allowed is {self.MAX_REQUEST_BODY_BYTES} bytes."
+                },
+            )
             return
 
         post_body = self.rfile.read(content_len).decode("utf-8") if content_len > 0 else "{}"
@@ -317,7 +358,7 @@ def run_server(
     host: str = "127.0.0.1",
     port: int = 8000,
     config: Optional[ConfigManager] = None,
-    allow_remote: bool = False
+    allow_remote: bool = False,
 ):
     """
     Starts the standalone FIM API and Dashboard server.
@@ -325,12 +366,10 @@ def run_server(
     Refuses wildcard CORS on non-loopback interfaces.
     """
     cfg = config or ConfigManager()
-    allowed_origins = cfg.get("api.allowed_origins", [
-        "http://localhost:8000",
-        "http://127.0.0.1:8000",
-        "http://localhost",
-        "http://127.0.0.1"
-    ])
+    allowed_origins = cfg.get(
+        "api.allowed_origins",
+        ["http://localhost:8000", "http://127.0.0.1:8000", "http://localhost", "http://127.0.0.1"],
+    )
 
     # Bind security check
     if host not in LOOPBACK_HOSTS and not allow_remote and not cfg.get("api.allow_remote", False):
@@ -349,7 +388,9 @@ def run_server(
     api_token = resolve_api_token(cfg)
 
     if len(api_token) < 32:
-        logger.warning("API token is shorter than 32 characters — consider generating a stronger token.")
+        logger.warning(
+            "API token is shorter than 32 characters — consider generating a stronger token."
+        )
 
     FIMHttpHandler.config = cfg
     FIMHttpHandler.db = db
@@ -362,14 +403,16 @@ def run_server(
     socketserver.ThreadingTCPServer.allow_reuse_address = True
     socketserver.ThreadingTCPServer.daemon_threads = True
     with socketserver.ThreadingTCPServer((host, port), FIMHttpHandler) as httpd:
-        print(f"\n=======================================================")
-        print(f" 🛡️  FIM v2.2 REST API & Web Dashboard Running (Multi-threaded)")
+        print("\n=======================================================")
+        print(" 🛡️  FIM v2.2 REST API & Web Dashboard Running (Multi-threaded)")
         print(f" URL: http://{host}:{port}/")
         print(f" Auth Token File: {token_file}")
-        print(f" (Supply via 'Authorization: Bearer <token>' or 'X-API-Key: <token>')")
+        print(" (Supply via 'Authorization: Bearer <token>' or 'X-API-Key: <token>')")
         print(f" Health Check: http://{host}:{port}/health")
-        print(f" Prometheus Metrics: curl -H \"Authorization: Bearer $(cat '{token_file}')\" http://{host}:{port}/metrics")
-        print(f"=======================================================\n")
+        print(
+            f" Prometheus Metrics: curl -H \"Authorization: Bearer $(cat '{token_file}')\" http://{host}:{port}/metrics"
+        )
+        print("=======================================================\n")
         try:
             httpd.serve_forever()
         except KeyboardInterrupt:

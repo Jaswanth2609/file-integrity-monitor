@@ -8,12 +8,12 @@ Protects against root attackers attempting to rewrite local SQLite audit records
 import hashlib
 import hmac
 import json
-import os
 import time
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple, Union
 
 from .asymmetric import AsymmetricEngine
+
 
 class ChainAnchorManager:
     """Manages creation, signing, exporting, and verification of audit chain-head anchors."""
@@ -26,7 +26,7 @@ class ChainAnchorManager:
         total_events: int,
         private_key_path: Optional[Union[str, Path]] = None,
         secret_hmac_key: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None
+        metadata: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """
         Creates a signed anchor document for the current audit chain head.
@@ -40,7 +40,7 @@ class ChainAnchorManager:
             "anchored_at": ts,
             "metadata": metadata or {},
             "signing_type": "none",
-            "signature": ""
+            "signature": "",
         }
 
         canonical_payload = cls._canonicalize_anchor_payload(anchor_data)
@@ -50,7 +50,9 @@ class ChainAnchorManager:
             anchor_data["signing_type"] = "ed25519"
             anchor_data["signature"] = sig
         elif secret_hmac_key:
-            sig = hmac.new(secret_hmac_key.encode("utf-8"), canonical_payload, hashlib.sha256).hexdigest()
+            sig = hmac.new(
+                secret_hmac_key.encode("utf-8"), canonical_payload, hashlib.sha256
+            ).hexdigest()
             anchor_data["signing_type"] = "hmac_sha256"
             anchor_data["signature"] = sig
 
@@ -63,16 +65,12 @@ class ChainAnchorManager:
             "sequence_id": anchor_data.get("sequence_id", 0),
             "chain_head_hash": anchor_data.get("chain_head_hash", ""),
             "total_events": anchor_data.get("total_events", 0),
-            "anchored_at": f"{anchor_data.get('anchored_at', 0.0):.6f}"
+            "anchored_at": f"{anchor_data.get('anchored_at', 0.0):.6f}",
         }
         return json.dumps(payload_dict, sort_keys=True).encode("utf-8")
 
     @classmethod
-    def export_anchor_file(
-        cls,
-        anchor_data: Dict[str, Any],
-        output_path: Union[str, Path]
-    ) -> Path:
+    def export_anchor_file(cls, anchor_data: Dict[str, Any], output_path: Union[str, Path]) -> Path:
         """Exports anchor data to JSON file."""
         p = Path(output_path).expanduser().resolve()
         p.parent.mkdir(parents=True, exist_ok=True)
@@ -94,7 +92,7 @@ class ChainAnchorManager:
         current_head_hash: str,
         current_sequence_id: int,
         public_key_path: Optional[Union[str, Path]] = None,
-        secret_hmac_key: Optional[str] = None
+        secret_hmac_key: Optional[str] = None,
     ) -> Tuple[bool, str]:
         """
         Verifies that:
@@ -108,14 +106,27 @@ class ChainAnchorManager:
         # 1. Verify anchor signature
         if signing_type == "ed25519":
             if not public_key_path:
-                return False, "Anchor was signed with Ed25519, but no public key was provided for verification."
-            valid_sig = AsymmetricEngine.verify_payload(canonical_payload, signature, public_key_path)
+                return (
+                    False,
+                    "Anchor was signed with Ed25519, but no public key was provided for verification.",
+                )
+            valid_sig = AsymmetricEngine.verify_payload(
+                canonical_payload, signature, public_key_path
+            )
             if not valid_sig:
-                return False, "Anchor signature verification failed! The anchor file has been modified or forged."
+                return (
+                    False,
+                    "Anchor signature verification failed! The anchor file has been modified or forged.",
+                )
         elif signing_type == "hmac_sha256":
             if not secret_hmac_key:
-                return False, "Anchor was signed with HMAC, but no secret key was provided for verification."
-            expected_sig = hmac.new(secret_hmac_key.encode("utf-8"), canonical_payload, hashlib.sha256).hexdigest()
+                return (
+                    False,
+                    "Anchor was signed with HMAC, but no secret key was provided for verification.",
+                )
+            expected_sig = hmac.new(
+                secret_hmac_key.encode("utf-8"), canonical_payload, hashlib.sha256
+            ).hexdigest()
             if not hmac.compare_digest(signature, expected_sig):
                 return False, "Anchor HMAC signature mismatch! Possible anchor file tampering."
 

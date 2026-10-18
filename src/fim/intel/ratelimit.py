@@ -4,10 +4,8 @@ Rate Limiter, Daily Quota Tracker, and Threat Intel Cache Manager for FIM v2.0.
 
 import threading
 import time
-from typing import Optional, Dict, Any
+from typing import Optional
 
-from .base import IntelReport, Verdict
-from ..storage.db import DatabaseManager
 
 class TokenBucketRateLimiter:
     """Thread-safe token bucket rate limiter."""
@@ -42,6 +40,7 @@ class TokenBucketRateLimiter:
                 return False
 
             time.sleep(min(sleep_time, 0.5))
+
 
 class QuotaTracker:
     """Tracks daily request quota to prevent service exhaustion."""

@@ -6,7 +6,6 @@ Implements subcommands: baseline, check, watch, scan, hash, audit, db, keygen, r
 import argparse
 import getpass
 import json
-import os
 import sys
 import time
 from pathlib import Path
@@ -21,11 +20,11 @@ from ..core.hasher import HashEngine
 from ..core.monitor import LiveMonitor
 from ..crypto.anchor import ChainAnchorManager
 from ..crypto.asymmetric import AsymmetricEngine
-from ..crypto.entropy import validate_secret_entropy
-from ..errors import FIMError, BaselineTamperedError
+from ..errors import BaselineTamperedError
 from ..intel.virustotal import VirusTotalClient
 from ..reports.generator import ReportGenerator
 from ..storage.db import DatabaseManager
+
 
 def create_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
@@ -39,21 +38,43 @@ def create_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", help="Available subcommands")
 
     # Subcommand: keygen (Ed25519)
-    keygen_parser = subparsers.add_parser("keygen", help="Generate asymmetric Ed25519 keypair for tamper-proof signing")
-    keygen_parser.add_argument("--out-key", default="~/.fim/fim_ed25519", help="Private key output path (default: ~/.fim/fim_ed25519)")
-    keygen_parser.add_argument("--out-pub", default="~/.fim/fim_ed25519.pub", help="Public key output path (default: ~/.fim/fim_ed25519.pub)")
+    keygen_parser = subparsers.add_parser(
+        "keygen", help="Generate asymmetric Ed25519 keypair for tamper-proof signing"
+    )
+    keygen_parser.add_argument(
+        "--out-key",
+        default="~/.fim/fim_ed25519",
+        help="Private key output path (default: ~/.fim/fim_ed25519)",
+    )
+    keygen_parser.add_argument(
+        "--out-pub",
+        default="~/.fim/fim_ed25519.pub",
+        help="Public key output path (default: ~/.fim/fim_ed25519.pub)",
+    )
 
     # Subcommand: baseline
     baseline_parser = subparsers.add_parser("baseline", help="Manage cryptographic file baselines")
     base_sub = baseline_parser.add_subparsers(dest="baseline_action")
-    
+
     # baseline create
     p_base_create = base_sub.add_parser("create", help="Create a new baseline")
     p_base_create.add_argument("paths", nargs="+", help="Directory or file paths to baseline")
-    p_base_create.add_argument("--name", "-n", default="default", help="Profile name (default: default)")
-    p_base_create.add_argument("--algo", "-a", default="sha256", choices=["sha256", "sha512", "blake2b"], help="Hash algorithm")
-    p_base_create.add_argument("--sign-type", choices=["hmac", "ed25519"], default="hmac", help="Signature type")
-    p_base_create.add_argument("--sign-key", help="Path to Ed25519 private key for asymmetric baseline signing")
+    p_base_create.add_argument(
+        "--name", "-n", default="default", help="Profile name (default: default)"
+    )
+    p_base_create.add_argument(
+        "--algo",
+        "-a",
+        default="sha256",
+        choices=["sha256", "sha512", "blake2b"],
+        help="Hash algorithm",
+    )
+    p_base_create.add_argument(
+        "--sign-type", choices=["hmac", "ed25519"], default="hmac", help="Signature type"
+    )
+    p_base_create.add_argument(
+        "--sign-key", help="Path to Ed25519 private key for asymmetric baseline signing"
+    )
 
     # baseline list
     base_sub.add_parser("list", help="List all recorded baselines")
@@ -64,43 +85,89 @@ def create_parser() -> argparse.ArgumentParser:
     p_base_diff.add_argument("base_b", help="Second baseline profile name")
 
     # baseline migrate
-    p_base_migrate = base_sub.add_parser("migrate", help="Explicitly migrate and re-sign baseline with current master key")
-    p_base_migrate.add_argument("name", nargs="?", default="default", help="Baseline profile name (default: default)")
-    p_base_migrate.add_argument("--old-key", help="Previous master secret key used to sign the baseline")
+    p_base_migrate = base_sub.add_parser(
+        "migrate", help="Explicitly migrate and re-sign baseline with current master key"
+    )
+    p_base_migrate.add_argument(
+        "name", nargs="?", default="default", help="Baseline profile name (default: default)"
+    )
+    p_base_migrate.add_argument(
+        "--old-key", help="Previous master secret key used to sign the baseline"
+    )
 
     # Subcommand: check
-    check_parser = subparsers.add_parser("check", help="Verify filesystem integrity against baseline")
-    check_parser.add_argument("--profile", "-p", default="default", help="Baseline profile name (default: default)")
-    check_parser.add_argument("--pubkey", help="Path to Ed25519 public key for asymmetric signature verification")
-    check_parser.add_argument("--no-yara", action="store_true", help="Disable YARA scanning on modified/added files")
-    check_parser.add_argument("--format", "-f", choices=["table", "json"], default="table", help="Output format")
-    check_parser.add_argument("--accept-migration", action="store_true", help="Explicitly accept legacy key migration and re-sign baseline")
-    check_parser.add_argument("--old-key", help="Previous master secret key (used during key migration)")
-    check_parser.add_argument("--interval", type=int, help="Run continuous scheduled scans at the specified interval in seconds")
+    check_parser = subparsers.add_parser(
+        "check", help="Verify filesystem integrity against baseline"
+    )
+    check_parser.add_argument(
+        "--profile", "-p", default="default", help="Baseline profile name (default: default)"
+    )
+    check_parser.add_argument(
+        "--pubkey", help="Path to Ed25519 public key for asymmetric signature verification"
+    )
+    check_parser.add_argument(
+        "--no-yara", action="store_true", help="Disable YARA scanning on modified/added files"
+    )
+    check_parser.add_argument(
+        "--format", "-f", choices=["table", "json"], default="table", help="Output format"
+    )
+    check_parser.add_argument(
+        "--accept-migration",
+        action="store_true",
+        help="Explicitly accept legacy key migration and re-sign baseline",
+    )
+    check_parser.add_argument(
+        "--old-key", help="Previous master secret key (used during key migration)"
+    )
+    check_parser.add_argument(
+        "--interval",
+        type=int,
+        help="Run continuous scheduled scans at the specified interval in seconds",
+    )
     check_parser.add_argument("--export-html", help="Export HTML report to file")
     check_parser.add_argument("--export-json", help="Export JSON report to file")
     check_parser.add_argument("--export-csv", help="Export CSV report to file")
 
     # Subcommand: audit (Ledger & Chain-head Anchoring)
-    audit_parser = subparsers.add_parser("audit", help="Inspect and verify append-only cryptographic audit ledger")
+    audit_parser = subparsers.add_parser(
+        "audit", help="Inspect and verify append-only cryptographic audit ledger"
+    )
     audit_sub = audit_parser.add_subparsers(dest="audit_action")
-    
-    p_audit_ver = audit_sub.add_parser("verify", help="Verify local hash-chained audit ledger integrity")
-    p_audit_ver.add_argument("--anchor", "-a", help="Optional path to external anchor file to verify against")
+
+    p_audit_ver = audit_sub.add_parser(
+        "verify", help="Verify local hash-chained audit ledger integrity"
+    )
+    p_audit_ver.add_argument(
+        "--anchor", "-a", help="Optional path to external anchor file to verify against"
+    )
     audit_sub.add_parser("list", help="List recent audit log entries")
 
-    p_anchor_exp = audit_sub.add_parser("anchor-export", help="Export and sign current audit chain head anchor")
-    p_anchor_exp.add_argument("--output", "-o", required=True, help="Destination anchor JSON file path")
+    p_anchor_exp = audit_sub.add_parser(
+        "anchor-export", help="Export and sign current audit chain head anchor"
+    )
+    p_anchor_exp.add_argument(
+        "--output", "-o", required=True, help="Destination anchor JSON file path"
+    )
     p_anchor_exp.add_argument("--sign-key", help="Path to Ed25519 private key to sign the anchor")
 
-    p_anchor_ver = audit_sub.add_parser("anchor-verify", help="Verify audit chain against an external signed anchor")
-    p_anchor_ver.add_argument("--anchor", "-a", required=True, help="Path to external anchor JSON file")
-    p_anchor_ver.add_argument("--pubkey", help="Path to Ed25519 public key to verify anchor signature")
+    p_anchor_ver = audit_sub.add_parser(
+        "anchor-verify", help="Verify audit chain against an external signed anchor"
+    )
+    p_anchor_ver.add_argument(
+        "--anchor", "-a", required=True, help="Path to external anchor JSON file"
+    )
+    p_anchor_ver.add_argument(
+        "--pubkey", help="Path to Ed25519 public key to verify anchor signature"
+    )
 
     # Subcommand: db (Database Health & Integrity)
-    db_parser = subparsers.add_parser("db", help="Inspect and verify SQLite database health and integrity")
+    db_parser = subparsers.add_parser(
+        "db", help="Inspect and verify SQLite database health and integrity"
+    )
     db_sub = db_parser.add_subparsers(dest="db_action")
-    db_sub.add_parser("verify", help="Run SQLite PRAGMA integrity check and verify audit trail consistency")
+    db_sub.add_parser(
+        "verify", help="Run SQLite PRAGMA integrity check and verify audit trail consistency"
+    )
 
     # Subcommand: watch
     watch_parser = subparsers.add_parser("watch", help="Start real-time monitoring daemon")
@@ -108,19 +175,25 @@ def create_parser() -> argparse.ArgumentParser:
     watch_parser.add_argument("--public-key", default=None, help="Path to Ed25519 public key file")
 
     # Subcommand: scan
-    scan_parser = subparsers.add_parser("scan", help="Scan a file or directory for threats (reputation + local)")
+    scan_parser = subparsers.add_parser(
+        "scan", help="Scan a file or directory for threats (reputation + local)"
+    )
     scan_parser.add_argument("target", help="Path to file or directory")
     scan_parser.add_argument("--no-vt", action="store_true", help="Skip VirusTotal lookup")
 
     # Subcommand: hash
     hash_parser = subparsers.add_parser("hash", help="Calculate cryptographic hashes for a file")
     hash_parser.add_argument("file", help="Path to file")
-    hash_parser.add_argument("--algo", "-a", choices=["sha256", "sha512", "blake2b", "md5", "sha1"], default="sha256")
+    hash_parser.add_argument(
+        "--algo", "-a", choices=["sha256", "sha512", "blake2b", "md5", "sha1"], default="sha256"
+    )
 
     # Subcommand: report
     rep_parser = subparsers.add_parser("report", help="Generate audit report")
     rep_parser.add_argument("--profile", "-p", default="default")
-    rep_parser.add_argument("--format", "-f", choices=["html", "json", "csv", "txt"], default="html")
+    rep_parser.add_argument(
+        "--format", "-f", choices=["html", "json", "csv", "txt"], default="html"
+    )
     rep_parser.add_argument("--output", "-o", default="reports/fim_audit_report.html")
 
     # Subcommand: config
@@ -134,9 +207,15 @@ def create_parser() -> argparse.ArgumentParser:
 
     # Subcommand: serve
     serve_parser = subparsers.add_parser("serve", help="Launch REST API and Web Dashboard")
-    serve_parser.add_argument("--host", default="127.0.0.1", help="Host address (default: 127.0.0.1)")
+    serve_parser.add_argument(
+        "--host", default="127.0.0.1", help="Host address (default: 127.0.0.1)"
+    )
     serve_parser.add_argument("--port", type=int, default=8000, help="Port number (default: 8000)")
-    serve_parser.add_argument("--allow-remote", action="store_true", help="Explicitly permit binding to non-loopback network interfaces")
+    serve_parser.add_argument(
+        "--allow-remote",
+        action="store_true",
+        help="Explicitly permit binding to non-loopback network interfaces",
+    )
 
     # Subcommand: menu
     subparsers.add_parser("menu", help="Launch interactive terminal menu UI")
@@ -145,10 +224,13 @@ def create_parser() -> argparse.ArgumentParser:
     parser.add_argument("--file", "-f", help="[Legacy v1] Scan a single file")
     parser.add_argument("--dir", "-d", help="[Legacy v1] Scan a directory")
     parser.add_argument("--hash", help="[Legacy v1] Query a hash directly on VirusTotal")
-    parser.add_argument("--no-vt", action="store_true", help="[Legacy v1] Disable VirusTotal checks")
+    parser.add_argument(
+        "--no-vt", action="store_true", help="[Legacy v1] Disable VirusTotal checks"
+    )
     parser.add_argument("--import-hashes", help="[Legacy v1] Import known hash signatures into DB")
 
     return parser
+
 
 def main_cli(args_list: Optional[List[str]] = None) -> int:
     parser = create_parser()
@@ -195,7 +277,9 @@ def main_cli(args_list: Optional[List[str]] = None) -> int:
 
     if cmd == "keygen":
         if not AsymmetricEngine.is_available():
-            print(f"{Colors.RED}[!] Error: The 'cryptography' library is required for Ed25519 keygen.{Colors.RESET}")
+            print(
+                f"{Colors.RED}[!] Error: The 'cryptography' library is required for Ed25519 keygen.{Colors.RESET}"
+            )
             return 1
         priv_p, pub_p = AsymmetricEngine.save_keypair(args.out_key, args.out_pub)
         print(f"\n{Colors.GREEN}[✓] Generated Ed25519 Keypair:{Colors.RESET}")
@@ -214,15 +298,21 @@ def main_cli(args_list: Optional[List[str]] = None) -> int:
                 algo=args.algo,
                 signing_type=args.sign_type,
                 private_key_path=args.sign_key,
-                progress_callback=lambda idx, total, f: print(f"\rProcessed {idx}/{total} files...", end="", flush=True)
+                progress_callback=lambda idx, total, f: print(
+                    f"\rProcessed {idx}/{total} files...", end="", flush=True
+                ),
             )
-            print(f"\n{Colors.GREEN}[✓] Baseline created successfully with {len(manifest.files)} files! (Signature: {manifest.signature[:16]}...){Colors.RESET}")
+            print(
+                f"\n{Colors.GREEN}[✓] Baseline created successfully with {len(manifest.files)} files! (Signature: {manifest.signature[:16]}...){Colors.RESET}"
+            )
             return 0
         elif action == "list":
             baselines = db.list_baselines()
             print(f"\n{Colors.BOLD}Registered Baselines:{Colors.RESET}")
             for b in baselines:
-                print(f"  • {Colors.CYAN}{b['name']}{Colors.RESET} ({b['file_count']} files, algo: {b['algo']}) - Paths: {b['root_paths']}")
+                print(
+                    f"  • {Colors.CYAN}{b['name']}{Colors.RESET} ({b['file_count']} files, algo: {b['algo']}) - Paths: {b['root_paths']}"
+                )
             return 0
         elif action == "diff":
             res = b_mgr.diff_baselines(args.base_a, args.base_b)
@@ -239,7 +329,9 @@ def main_cli(args_list: Optional[List[str]] = None) -> int:
             try:
                 ok = b_mgr.migrate_baseline(profile, old_key=old_k)
                 if ok:
-                    print(f"\n{Colors.GREEN}[✓] Baseline '{profile}' successfully migrated and re-signed with current master key!{Colors.RESET}")
+                    print(
+                        f"\n{Colors.GREEN}[✓] Baseline '{profile}' successfully migrated and re-signed with current master key!{Colors.RESET}"
+                    )
                     return 0
             except Exception as e:
                 print(f"\n{Colors.RED}[!] Migration failed: {e}{Colors.RESET}", file=sys.stderr)
@@ -258,23 +350,29 @@ def main_cli(args_list: Optional[List[str]] = None) -> int:
                     accept_migration=args.accept_migration,
                     public_key_path=args.pubkey,
                     enable_yara=not args.no_yara,
-                    old_key=args.old_key
+                    old_key=args.old_key,
                 )
             except BaselineTamperedError as e:
                 print(f"{Colors.RED}[CRITICAL ERROR 2] {e}{Colors.RESET}", file=sys.stderr)
                 return 2
             except Exception as e:
-                print(f"{Colors.RED}[ERROR 2] Verification failed: {e}{Colors.RESET}", file=sys.stderr)
+                print(
+                    f"{Colors.RED}[ERROR 2] Verification failed: {e}{Colors.RESET}", file=sys.stderr
+                )
                 return 2
 
             if args.format == "json":
                 print(json.dumps(summary.to_dict(), indent=2))
             else:
                 print(f"\n--- FIM Integrity Check: Profile '{args.profile}' ---")
-                print(f"Files Checked : {summary.current_files_scanned} / {summary.total_baseline_files}")
+                print(
+                    f"Files Checked : {summary.current_files_scanned} / {summary.total_baseline_files}"
+                )
                 print(f"Changes Found : {len(summary.findings)}")
                 if not summary.has_changes:
-                    print(f"{Colors.GREEN}[✓] Baseline Verified. No changes detected.{Colors.RESET}")
+                    print(
+                        f"{Colors.GREEN}[✓] Baseline Verified. No changes detected.{Colors.RESET}"
+                    )
                 else:
                     print(f"{Colors.RED}[!] ATTENTION: File changes detected:{Colors.RESET}")
                     for f in summary.findings:
@@ -295,7 +393,9 @@ def main_cli(args_list: Optional[List[str]] = None) -> int:
             return summary.exit_code
 
         if args.interval and args.interval > 0:
-            print(f"Starting scheduled integrity scans on profile '{args.profile}' every {args.interval}s (Ctrl+C to stop)...")
+            print(
+                f"Starting scheduled integrity scans on profile '{args.profile}' every {args.interval}s (Ctrl+C to stop)..."
+            )
             try:
                 while True:
                     _run_single_check()
@@ -312,7 +412,9 @@ def main_cli(args_list: Optional[List[str]] = None) -> int:
             anchor_file = getattr(args, "anchor", None)
             valid, msg, count = db.audit.verify_integrity(external_anchor_path=anchor_file)
             col = Colors.GREEN if valid else Colors.RED
-            print(f"\n{col}Audit Chain Integrity: {'VERIFIED' if valid else 'TAMPERED'}{Colors.RESET}")
+            print(
+                f"\n{col}Audit Chain Integrity: {'VERIFIED' if valid else 'TAMPERED'}{Colors.RESET}"
+            )
             print(f"Total Events Checked : {count}")
             if msg:
                 print(f"Status Details       : {msg}")
@@ -323,13 +425,17 @@ def main_cli(args_list: Optional[List[str]] = None) -> int:
             events = db.audit.get_events(limit=50)
             print(f"\n{Colors.BOLD}Recent Cryptographic Audit Ledger Events:{Colors.RESET}")
             for ev in events:
-                print(f"  • #{ev['id']} [{time.ctime(ev['timestamp'])}] {Colors.CYAN}{ev['event']}{Colors.RESET} (Hash: {ev['entry_hash'][:16]}...)")
+                print(
+                    f"  • #{ev['id']} [{time.ctime(ev['timestamp'])}] {Colors.CYAN}{ev['event']}{Colors.RESET} (Hash: {ev['entry_hash'][:16]}...)"
+                )
             return 0
 
         elif action == "anchor-export":
             valid, msg, count = db.audit.verify_integrity()
             if not valid:
-                print(f"{Colors.RED}[!] Cannot export anchor: local audit chain is tampered! ({msg}){Colors.RESET}")
+                print(
+                    f"{Colors.RED}[!] Cannot export anchor: local audit chain is tampered! ({msg}){Colors.RESET}"
+                )
                 return 2
             head_hash = db.audit.get_latest_hash()
             events = db.audit.get_events(limit=1)
@@ -339,11 +445,13 @@ def main_cli(args_list: Optional[List[str]] = None) -> int:
                 chain_head_hash=head_hash,
                 total_events=count,
                 private_key_path=args.sign_key,
-                secret_hmac_key=config.secret_key
+                secret_hmac_key=config.secret_key,
             )
             out_p = ChainAnchorManager.export_anchor_file(anchor, args.output)
             print(f"\n{Colors.GREEN}[✓] Exported signed audit anchor to: {out_p}{Colors.RESET}")
-            print(f"  Sequence #{seq_id} | Head Hash: {head_hash[:20]}... | Type: {anchor['signing_type']}\n")
+            print(
+                f"  Sequence #{seq_id} | Head Hash: {head_hash[:20]}... | Type: {anchor['signing_type']}\n"
+            )
             return 0
 
         elif action == "anchor-verify":
@@ -356,36 +464,51 @@ def main_cli(args_list: Optional[List[str]] = None) -> int:
                 current_head_hash=head_hash,
                 current_sequence_id=seq_id,
                 public_key_path=args.pubkey,
-                secret_hmac_key=config.secret_key
+                secret_hmac_key=config.secret_key,
             )
             if ok:
-                print(f"\n{Colors.GREEN}[✓] External Chain-Head Anchor Verified: {msg}{Colors.RESET}\n")
+                print(
+                    f"\n{Colors.GREEN}[✓] External Chain-Head Anchor Verified: {msg}{Colors.RESET}\n"
+                )
                 return 0
             else:
-                print(f"\n{Colors.RED}[!] ANCHOR INTEGRITY FAILURE: {msg}{Colors.RESET}\n", file=sys.stderr)
+                print(
+                    f"\n{Colors.RED}[!] ANCHOR INTEGRITY FAILURE: {msg}{Colors.RESET}\n",
+                    file=sys.stderr,
+                )
                 return 2
 
     elif cmd == "db":
         action = args.db_action
         if action == "verify" or action is None:
-            print(f"\n{Colors.BOLD}--- FIM Database & Storage Health Verification ---{Colors.RESET}")
+            print(
+                f"\n{Colors.BOLD}--- FIM Database & Storage Health Verification ---{Colors.RESET}"
+            )
             db_ok, db_msgs = db.verify_database_integrity()
             chain_ok, chain_msg, count = db.audit.verify_integrity()
 
             if db_ok:
-                print(f"  SQLite Database Integrity : {Colors.GREEN}[OK] PRAGMA integrity_check passed{Colors.RESET}")
+                print(
+                    f"  SQLite Database Integrity : {Colors.GREEN}[OK] PRAGMA integrity_check passed{Colors.RESET}"
+                )
             else:
-                print(f"  SQLite Database Integrity : {Colors.RED}[FAIL] Corruption detected{Colors.RESET}")
+                print(
+                    f"  SQLite Database Integrity : {Colors.RED}[FAIL] Corruption detected{Colors.RESET}"
+                )
                 for m in db_msgs:
                     print(f"    {Colors.RED}• {m}{Colors.RESET}")
 
             if chain_ok:
-                print(f"  Audit Ledger Integrity    : {Colors.GREEN}[OK] {count} events verified in chain & anchor{Colors.RESET}")
+                print(
+                    f"  Audit Ledger Integrity    : {Colors.GREEN}[OK] {count} events verified in chain & anchor{Colors.RESET}"
+                )
             else:
                 print(f"  Audit Ledger Integrity    : {Colors.RED}[FAIL] {chain_msg}{Colors.RESET}")
 
             overall = db_ok and chain_ok
-            print(f"\nOverall Status: {Colors.GREEN + 'HEALTHY' if overall else Colors.RED + 'CORRUPTED/TAMPERED'}{Colors.RESET}\n")
+            print(
+                f"\nOverall Status: {Colors.GREEN + 'HEALTHY' if overall else Colors.RED + 'CORRUPTED/TAMPERED'}{Colors.RESET}\n"
+            )
             return 0 if overall else 2
 
     elif cmd == "watch":
@@ -414,6 +537,7 @@ def main_cli(args_list: Optional[List[str]] = None) -> int:
         yara_eng = None
         try:
             from ..intel.yara_scanner import YaraEngine
+
             yara_eng = YaraEngine(config.get("yara.rules_dir"))
         except Exception:
             pass

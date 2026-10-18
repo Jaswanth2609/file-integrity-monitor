@@ -5,7 +5,8 @@ Threat Intelligence Base Classes and Verdict Types for FIM v2.0.
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
+
 
 class Verdict(str, Enum):
     CLEAN = "CLEAN"
@@ -13,6 +14,7 @@ class Verdict(str, Enum):
     SUSPICIOUS = "SUSPICIOUS"
     MALICIOUS = "MALICIOUS"
     UNKNOWN = "UNKNOWN"
+
 
 @dataclass
 class IntelReport:
@@ -47,8 +49,9 @@ class IntelReport:
             "tags": self.tags,
             "cached": self.cached,
             "status": self.status,
-            "details": self.details
+            "details": self.details,
         }
+
 
 class BaseIntelProvider(ABC):
     """Abstract interface for threat intelligence feeds."""

@@ -15,9 +15,9 @@ from pathlib import Path
 from typing import Any, Dict, Generator, List, Optional, Tuple, Union
 
 from .audit_chain import AuditChain
-from ..errors import DatabaseError
 
 SCHEMA_VERSION = 2
+
 
 class DatabaseManager:
     """Central database management for FIM baselines, findings, runs, and intel cache."""
@@ -38,7 +38,9 @@ class DatabaseManager:
         else:
             self.audit_db_path = self.db_path.parent / "audit.db"
 
-        self.external_anchor_path = Path(external_anchor_path).resolve() if external_anchor_path else None
+        self.external_anchor_path = (
+            Path(external_anchor_path).resolve() if external_anchor_path else None
+        )
 
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self.audit_db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -130,7 +132,9 @@ class DatabaseManager:
                     FOREIGN KEY (baseline_id) REFERENCES baselines(id) ON DELETE CASCADE
                 )
             """)
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_bf_base_path ON baseline_files(baseline_id, path)")
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_bf_base_path ON baseline_files(baseline_id, path)"
+            )
             conn.execute("CREATE INDEX IF NOT EXISTS idx_bf_hash ON baseline_files(hash)")
 
             cursor.execute("PRAGMA table_info(baseline_files)")
@@ -210,17 +214,20 @@ class DatabaseManager:
             """)
 
             # Set schema version
-            conn.execute("""
+            conn.execute(
+                """
                 INSERT OR REPLACE INTO schema_meta (key, value)
                 VALUES ('schema_version', ?)
-            """, (str(SCHEMA_VERSION),))
+            """,
+                (str(SCHEMA_VERSION),),
+            )
 
     @property
     def audit(self) -> AuditChain:
         """Returns dedicated AuditChain instance tied to audit.db."""
         return AuditChain(
             conn_or_path=self.audit_db_path,
-            external_anchor_path=getattr(self, "external_anchor_path", None)
+            external_anchor_path=getattr(self, "external_anchor_path", None),
         )
 
     # ------------------ Key Registry Operations ------------------
@@ -231,17 +238,22 @@ class DatabaseManager:
         salted_hash = hashlib.sha256((salt + old_key).encode("utf-8")).hexdigest()
         fingerprint = hashlib.sha256(old_key.encode("utf-8")).hexdigest()[:8]
         with self.get_connection() as conn:
-            conn.execute("""
+            conn.execute(
+                """
                 INSERT INTO key_registry (key_hash, salt, fingerprint, rotated_at)
                 VALUES (?, ?, ?, ?)
-            """, (salted_hash, salt, fingerprint, time.time()))
+            """,
+                (salted_hash, salt, fingerprint, time.time()),
+            )
 
     def verify_registered_old_key(self, old_key: str) -> bool:
         """Verifies if a supplied old key matches any recorded key_registry entry."""
         fingerprint = hashlib.sha256(old_key.encode("utf-8")).hexdigest()[:8]
         with self.get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT salt, key_hash FROM key_registry WHERE fingerprint = ?", (fingerprint,))
+            cursor.execute(
+                "SELECT salt, key_hash FROM key_registry WHERE fingerprint = ?", (fingerprint,)
+            )
             rows = cursor.fetchall()
             for r in rows:
                 salt = r["salt"]
@@ -271,7 +283,7 @@ class DatabaseManager:
                     msg = r[0]
                     if msg.lower() != "ok":
                         messages.append(f"Main DB corruption: {msg}")
-            
+
             # Check audit DB integrity as well
             if self.audit_db_path.exists():
                 audit_conn = sqlite3.connect(str(self.audit_db_path), timeout=10.0)
@@ -299,7 +311,7 @@ class DatabaseManager:
         signature: str,
         files_data: List[Dict[str, Any]],
         key_fingerprint: str = "",
-        version: int = 1
+        version: int = 1,
     ) -> int:
         """Stores a named baseline and all its file metadata transactionally."""
         with self.get_connection() as conn:
@@ -311,10 +323,21 @@ class DatabaseManager:
                 cursor.execute("DELETE FROM baselines WHERE id = ?", (existing[0],))
 
             created_at = time.time()
-            cursor.execute("""
+            cursor.execute(
+                """
                 INSERT INTO baselines (name, created_at, root_paths, algo, signature, key_fingerprint, version)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
-            """, (name, created_at, json.dumps(root_paths), algo, signature, key_fingerprint, version))
+            """,
+                (
+                    name,
+                    created_at,
+                    json.dumps(root_paths),
+                    algo,
+                    signature,
+                    key_fingerprint,
+                    version,
+                ),
+            )
             baseline_id = cursor.lastrowid
 
             records = [
@@ -329,24 +352,30 @@ class DatabaseManager:
                     f.get("mtime", 0.0),
                     f.get("ctime", 0.0),
                     f.get("inode", 0),
-                    str(f.get("symlink_target") or "")
+                    str(f.get("symlink_target") or ""),
                 )
                 for f in files_data
             ]
-            cursor.executemany("""
+            cursor.executemany(
+                """
                 INSERT INTO baseline_files (
                     baseline_id, path, size, hash, mode, uid, gid, mtime, ctime, inode, symlink_target
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, records)
+            """,
+                records,
+            )
 
         # Record in dedicated audit chain
-        self.audit.append_event("BASELINE_CREATED", {
-            "name": name,
-            "file_count": len(files_data),
-            "algo": algo,
-            "signature": signature,
-            "fingerprint": key_fingerprint
-        })
+        self.audit.append_event(
+            "BASELINE_CREATED",
+            {
+                "name": name,
+                "file_count": len(files_data),
+                "algo": algo,
+                "signature": signature,
+                "fingerprint": key_fingerprint,
+            },
+        )
 
         return baseline_id
 
@@ -357,7 +386,7 @@ class DatabaseManager:
             row = cursor.fetchone()
             if not row:
                 return None
-            
+
             b_id = row["id"]
             cursor.execute("SELECT * FROM baseline_files WHERE baseline_id = ?", (b_id,))
             files = [dict(f) for f in cursor.fetchall()]
@@ -369,9 +398,11 @@ class DatabaseManager:
                 "root_paths": json.loads(row["root_paths"]),
                 "algo": row["algo"],
                 "signature": row["signature"],
-                "key_fingerprint": row["key_fingerprint"] if "key_fingerprint" in row.keys() else "",
+                "key_fingerprint": (
+                    row["key_fingerprint"] if "key_fingerprint" in row.keys() else ""
+                ),
                 "version": row["version"],
-                "files": files
+                "files": files,
             }
 
     def list_baselines(self) -> List[Dict[str, Any]]:
@@ -387,16 +418,20 @@ class DatabaseManager:
             """)
             results = []
             for r in cursor.fetchall():
-                results.append({
-                    "id": r["id"],
-                    "name": r["name"],
-                    "created_at": r["created_at"],
-                    "root_paths": json.loads(r["root_paths"]),
-                    "algo": r["algo"],
-                    "version": r["version"],
-                    "key_fingerprint": r["key_fingerprint"] if "key_fingerprint" in r.keys() else "",
-                    "file_count": r["file_count"]
-                })
+                results.append(
+                    {
+                        "id": r["id"],
+                        "name": r["name"],
+                        "created_at": r["created_at"],
+                        "root_paths": json.loads(r["root_paths"]),
+                        "algo": r["algo"],
+                        "version": r["version"],
+                        "key_fingerprint": (
+                            r["key_fingerprint"] if "key_fingerprint" in r.keys() else ""
+                        ),
+                        "file_count": r["file_count"],
+                    }
+                )
             return results
 
     def delete_baseline(self, name: str) -> bool:
@@ -418,10 +453,13 @@ class DatabaseManager:
     def start_scan_run(self, profile: str, host: str = "") -> int:
         with self.get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("""
+            cursor.execute(
+                """
                 INSERT INTO scan_runs (started_at, profile, status, host)
                 VALUES (?, ?, 'RUNNING', ?)
-            """, (time.time(), profile, host))
+            """,
+                (time.time(), profile, host),
+            )
             return cursor.lastrowid
 
     def finish_scan_run(
@@ -430,24 +468,30 @@ class DatabaseManager:
         files_checked: int,
         changes_found: int,
         exit_code: int,
-        findings_data: Optional[List[Dict[str, Any]]] = None
+        findings_data: Optional[List[Dict[str, Any]]] = None,
     ) -> None:
         if findings_data:
             self.save_findings(run_id, findings_data)
 
         with self.get_connection() as conn:
-            conn.execute("""
+            conn.execute(
+                """
                 UPDATE scan_runs
                 SET finished_at = ?, status = 'COMPLETED', files_checked = ?, changes_found = ?, exit_code = ?
                 WHERE id = ?
-            """, (time.time(), files_checked, changes_found, exit_code, run_id))
+            """,
+                (time.time(), files_checked, changes_found, exit_code, run_id),
+            )
 
-        self.audit.append_event("SCAN_RUN_COMPLETED", {
-            "run_id": run_id,
-            "files_checked": files_checked,
-            "changes_found": changes_found,
-            "exit_code": exit_code
-        })
+        self.audit.append_event(
+            "SCAN_RUN_COMPLETED",
+            {
+                "run_id": run_id,
+                "files_checked": files_checked,
+                "changes_found": changes_found,
+                "exit_code": exit_code,
+            },
+        )
 
     def save_findings(self, run_id: int, findings: List[Dict[str, Any]]) -> None:
         if not findings:
@@ -460,37 +504,46 @@ class DatabaseManager:
                 f["severity"],
                 f.get("old_hash"),
                 f.get("new_hash"),
-                f.get("attack_id")
+                f.get("attack_id"),
             )
             for f in findings
         ]
         with self.get_connection() as conn:
-            conn.executemany("""
+            conn.executemany(
+                """
                 INSERT INTO findings (run_id, path, change_type, severity, old_hash, new_hash, attack_id)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
-            """, records)
+            """,
+                records,
+            )
 
     def get_unresolved_findings(self, limit: int = 100) -> List[Dict[str, Any]]:
         with self.get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT f.*, r.profile, r.started_at
                 FROM findings f
                 JOIN scan_runs r ON f.run_id = r.id
                 WHERE f.accepted_at IS NULL
                 ORDER BY f.id DESC
                 LIMIT ?
-            """, (limit,))
+            """,
+                (limit,),
+            )
             return [dict(row) for row in cursor.fetchall()]
 
     def accept_finding(self, finding_id: int, user: str = "operator") -> bool:
         with self.get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("""
+            cursor.execute(
+                """
                 UPDATE findings
                 SET accepted_by = ?, accepted_at = ?
                 WHERE id = ? AND accepted_at IS NULL
-            """, (user, time.time(), finding_id))
+            """,
+                (user, time.time(), finding_id),
+            )
             updated = cursor.rowcount > 0
 
         if updated:
@@ -507,17 +560,31 @@ class DatabaseManager:
         detections: int,
         total_engines: int,
         raw_json: Dict[str, Any],
-        ttl_seconds: int = 86400
+        ttl_seconds: int = 86400,
     ) -> None:
         h = file_hash.lower()
         with self.get_connection() as conn:
-            conn.execute("""
+            conn.execute(
+                """
                 INSERT OR REPLACE INTO intel_cache (
                     hash, provider, verdict, detections, total_engines, fetched_at, ttl_seconds, raw_json
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """, (h, provider, verdict, detections, total_engines, time.time(), ttl_seconds, json.dumps(raw_json)))
+            """,
+                (
+                    h,
+                    provider,
+                    verdict,
+                    detections,
+                    total_engines,
+                    time.time(),
+                    ttl_seconds,
+                    json.dumps(raw_json),
+                ),
+            )
 
-    def get_cached_intel(self, file_hash: str, max_age_seconds: Optional[int] = None) -> Optional[Dict[str, Any]]:
+    def get_cached_intel(
+        self, file_hash: str, max_age_seconds: Optional[int] = None
+    ) -> Optional[Dict[str, Any]]:
         h = file_hash.lower()
         with self.get_connection() as conn:
             cursor = conn.cursor()
@@ -538,7 +605,7 @@ class DatabaseManager:
                 "detections": row["detections"],
                 "total_engines": row["total_engines"],
                 "fetched_at": row["fetched_at"],
-                "raw_json": json.loads(row["raw_json"]) if row["raw_json"] else {}
+                "raw_json": json.loads(row["raw_json"]) if row["raw_json"] else {},
             }
 
     # ------------------ Known Hashes Import (Legacy v1) ------------------
@@ -559,10 +626,13 @@ class DatabaseManager:
                 fname = parts[1].strip() if len(parts) > 1 else ""
                 with self.get_connection() as conn:
                     try:
-                        conn.execute("""
+                        conn.execute(
+                            """
                             INSERT INTO known_hashes (hash, file_name, added_at)
                             VALUES (?, ?, ?)
-                        """, (h, fname, time.time()))
+                        """,
+                            (h, fname, time.time()),
+                        )
                         imported += 1
                     except sqlite3.IntegrityError:
                         skipped += 1

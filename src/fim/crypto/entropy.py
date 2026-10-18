@@ -10,6 +10,7 @@ import stat
 from pathlib import Path
 from typing import Tuple, Union
 
+
 def calculate_shannon_entropy(data: Union[str, bytes]) -> float:
     """
     Calculates the Shannon entropy (in bits per symbol) for a string or byte sequence.
@@ -38,10 +39,9 @@ def calculate_shannon_entropy(data: Union[str, bytes]) -> float:
 
     return entropy
 
+
 def validate_secret_entropy(
-    secret: str,
-    min_length: int = 16,
-    min_entropy: float = 3.0
+    secret: str, min_length: int = 16, min_entropy: float = 3.0
 ) -> Tuple[bool, str]:
     """
     Validates that a master key or passphrase meets minimum length and entropy thresholds.
@@ -51,15 +51,24 @@ def validate_secret_entropy(
 
     s_clean = secret.strip()
     if len(s_clean) < min_length:
-        return False, f"Secret key length ({len(s_clean)}) is less than minimum required length ({min_length} chars)."
+        return (
+            False,
+            f"Secret key length ({len(s_clean)}) is less than minimum required length ({min_length} chars).",
+        )
 
     ent = calculate_shannon_entropy(s_clean)
     if ent < min_entropy:
-        return False, f"Secret key entropy ({ent:.2f} bits/symbol) is below minimum threshold ({min_entropy:.2f}). Use a high-entropy random key."
+        return (
+            False,
+            f"Secret key entropy ({ent:.2f} bits/symbol) is below minimum threshold ({min_entropy:.2f}). Use a high-entropy random key.",
+        )
 
     return True, f"Entropy validation passed ({ent:.2f} bits/symbol)."
 
-def load_secure_key_file(key_path: Union[str, Path], enforce_permissions: bool = True, auto_generate: bool = False) -> str:
+
+def load_secure_key_file(
+    key_path: Union[str, Path], enforce_permissions: bool = True, auto_generate: bool = False
+) -> str:
     """
     Loads a key from a file, enforcing strict POSIX file permissions (0600) and entropy check.
     If auto_generate is True, generates a high-entropy 256-bit key if the file does not exist.

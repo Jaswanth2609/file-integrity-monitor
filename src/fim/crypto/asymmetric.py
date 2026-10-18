@@ -8,16 +8,16 @@ them from forging signatures or re-signing tampered baselines.
 import os
 import stat
 from pathlib import Path
-from typing import Optional, Tuple, Union
+from typing import Tuple, Union
 
 try:
     from cryptography.hazmat.primitives.asymmetric import ed25519
     from cryptography.hazmat.primitives import serialization
+
     HAVE_CRYPTOGRAPHY = True
 except ImportError:
     HAVE_CRYPTOGRAPHY = False
 
-from .entropy import load_secure_key_file
 
 class AsymmetricEngine:
     """Manages Ed25519 key generation, signing, and signature verification."""
@@ -32,26 +32,26 @@ class AsymmetricEngine:
         Generates a new Ed25519 private/public keypair in PEM format.
         """
         if not HAVE_CRYPTOGRAPHY:
-            raise RuntimeError("The 'cryptography' library is required for Ed25519 asymmetric signing.")
+            raise RuntimeError(
+                "The 'cryptography' library is required for Ed25519 asymmetric signing."
+            )
 
         private_key = ed25519.Ed25519PrivateKey.generate()
         private_pem = private_key.private_bytes(
             encoding=serialization.Encoding.PEM,
             format=serialization.PrivateFormat.PKCS8,
-            encryption_algorithm=serialization.NoEncryption()
+            encryption_algorithm=serialization.NoEncryption(),
         )
         public_key = private_key.public_key()
         public_pem = public_key.public_bytes(
             encoding=serialization.Encoding.PEM,
-            format=serialization.PublicFormat.SubjectPublicKeyInfo
+            format=serialization.PublicFormat.SubjectPublicKeyInfo,
         )
         return private_pem, public_pem
 
     @classmethod
     def save_keypair(
-        cls,
-        private_path: Union[str, Path],
-        public_path: Union[str, Path]
+        cls, private_path: Union[str, Path], public_path: Union[str, Path]
     ) -> Tuple[Path, Path]:
         """
         Generates and saves an Ed25519 keypair with strict 0600 file permissions on the private key.
@@ -77,7 +77,9 @@ class AsymmetricEngine:
     def load_private_key(cls, key_input: Union[str, Path, bytes]):
         """Loads an Ed25519 private key from PEM bytes, file path, or string."""
         if not HAVE_CRYPTOGRAPHY:
-            raise RuntimeError("The 'cryptography' library is required for Ed25519 asymmetric signing.")
+            raise RuntimeError(
+                "The 'cryptography' library is required for Ed25519 asymmetric signing."
+            )
 
         if isinstance(key_input, (str, Path)) and os.path.exists(str(key_input)):
             # Enforce 0600 permissions
@@ -100,7 +102,9 @@ class AsymmetricEngine:
     def load_public_key(cls, key_input: Union[str, Path, bytes]):
         """Loads an Ed25519 public key from PEM bytes, file path, or string."""
         if not HAVE_CRYPTOGRAPHY:
-            raise RuntimeError("The 'cryptography' library is required for Ed25519 asymmetric verification.")
+            raise RuntimeError(
+                "The 'cryptography' library is required for Ed25519 asymmetric verification."
+            )
 
         if isinstance(key_input, (str, Path)) and os.path.exists(str(key_input)):
             p = Path(key_input).expanduser().resolve()
@@ -125,10 +129,7 @@ class AsymmetricEngine:
 
     @classmethod
     def verify_payload(
-        cls,
-        payload: bytes,
-        signature_hex: str,
-        public_key_input: Union[str, Path, bytes]
+        cls, payload: bytes, signature_hex: str, public_key_input: Union[str, Path, bytes]
     ) -> bool:
         """
         Verifies an Ed25519 signature against payload using only the public key.

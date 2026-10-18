@@ -5,13 +5,13 @@ to eliminate false positives on routine system updates.
 """
 
 import logging
-import os
 import shutil
 import subprocess
 from pathlib import Path
 from typing import Dict, Optional, Tuple
 
 logger = logging.getLogger("fim.pkg_manager")
+
 
 class PackageManagerVerifier:
     """Detects and queries Linux package managers to verify changed system binaries and libraries."""
@@ -45,7 +45,7 @@ class PackageManagerVerifier:
                     [self._dpkg_path, "-S", resolved_path],
                     capture_output=True,
                     text=True,
-                    timeout=3.0
+                    timeout=3.0,
                 )
                 if res.returncode == 0 and ":" in res.stdout:
                     pkg_name = res.stdout.split(":")[0].strip()
@@ -61,7 +61,7 @@ class PackageManagerVerifier:
                     [self._rpm_path, "-qf", resolved_path],
                     capture_output=True,
                     text=True,
-                    timeout=3.0
+                    timeout=3.0,
                 )
                 if res.returncode == 0 and res.stdout.strip():
                     pkg_name = res.stdout.strip().splitlines()[0]
@@ -77,7 +77,7 @@ class PackageManagerVerifier:
                     [self._pacman_path, "-Qo", resolved_path],
                     capture_output=True,
                     text=True,
-                    timeout=3.0
+                    timeout=3.0,
                 )
                 if res.returncode == 0 and "is owned by" in res.stdout:
                     pkg_name = res.stdout.split("is owned by")[-1].strip()

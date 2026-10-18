@@ -6,17 +6,17 @@ chunked streaming, parallel processing, and OS-level TOCTOU-safe file descriptor
 
 import hashlib
 import os
-import sys
 import warnings
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Union, Callable
 
-from ..errors import FileNotFoundError_, PermissionDeniedError, InvalidHashFormatError
+from ..errors import FileNotFoundError_, PermissionDeniedError
 
 SUPPORTED_ALGORITHMS = ["sha256", "sha512", "blake2b", "md5", "sha1"]
 LEGACY_ALGORITHMS = ["md5", "sha1"]
+
 
 @dataclass
 class HashResult:
@@ -44,8 +44,9 @@ class HashResult:
             "blake2b": self.blake2b,
             "size": self.size,
             "mtime": self.mtime,
-            "error": self.error
+            "error": self.error,
         }
+
 
 class HashEngine:
     """Multithreaded, chunked cryptographic hash engine with descriptor-level TOCTOU defense."""
@@ -60,7 +61,7 @@ class HashEngine:
         """Validates hash length and hexadecimal characters."""
         if not hash_val or not isinstance(hash_val, str):
             return False, None
-        
+
         cleaned = hash_val.strip().lower()
         if not all(c in "0123456789abcdef" for c in cleaned):
             return False, None
@@ -80,7 +81,7 @@ class HashEngine:
         self,
         file_path: Union[str, Path],
         algorithms: Optional[List[str]] = None,
-        toctou_check: bool = True
+        toctou_check: bool = True,
     ) -> Dict[str, str]:
         """
         Calculates cryptographic hashes of a single file in memory-efficient chunks.
@@ -98,14 +99,14 @@ class HashEngine:
             raise FileNotFoundError_(f"Path is not a regular file: {path}")
 
         algos = [a.lower() for a in (algorithms or [self.default_algo, "md5"])]
-        
+
         # Check legacy warning
         for a in algos:
             if a in LEGACY_ALGORITHMS:
                 warnings.warn(
                     f"Algorithm '{a}' is cryptographically weak / legacy. Use SHA-256 or SHA-512 instead.",
                     UserWarning,
-                    stacklevel=2
+                    stacklevel=2,
                 )
 
         hashers = {}
@@ -117,9 +118,9 @@ class HashEngine:
             elif a == "blake2b":
                 hashers["blake2b"] = hashlib.blake2b()
             elif a == "md5":
-                hashers["md5"] = hashlib.md5()
+                hashers["md5"] = hashlib.md5(usedforsecurity=False)  # nosec B324
             elif a == "sha1":
-                hashers["sha1"] = hashlib.sha1()
+                hashers["sha1"] = hashlib.sha1(usedforsecurity=False)  # nosec B324
 
         open_flags = os.O_RDONLY
         if hasattr(os, "O_NOFOLLOW"):
@@ -142,7 +143,9 @@ class HashEngine:
             # Inode validation against path replacement attacks
             if stat_fd.st_ino != 0 and stat_path.st_ino != 0:
                 if stat_fd.st_ino != stat_path.st_ino or stat_fd.st_dev != stat_path.st_dev:
-                    raise PermissionDeniedError(f"Inode mismatch detected on '{path}' — possible symlink swap or TOCTOU attack.")
+                    raise PermissionDeniedError(
+                        f"Inode mismatch detected on '{path}' — possible symlink swap or TOCTOU attack."
+                    )
 
             # Read content through descriptor (locked to inode)
             with os.fdopen(fd, "rb", closefd=True) as f:
@@ -156,10 +159,18 @@ class HashEngine:
                 if toctou_check:
                     try:
                         stat_after = os.fstat(f.fileno())
-                        mtime_ns_before = getattr(stat_fd, "st_mtime_ns", int(stat_fd.st_mtime * 1e9))
-                        mtime_ns_after = getattr(stat_after, "st_mtime_ns", int(stat_after.st_mtime * 1e9))
-                        
-                        if stat_fd.st_ino != stat_after.st_ino or mtime_ns_before != mtime_ns_after or stat_fd.st_size != stat_after.st_size:
+                        mtime_ns_before = getattr(
+                            stat_fd, "st_mtime_ns", int(stat_fd.st_mtime * 1e9)
+                        )
+                        mtime_ns_after = getattr(
+                            stat_after, "st_mtime_ns", int(stat_after.st_mtime * 1e9)
+                        )
+
+                        if (
+                            stat_fd.st_ino != stat_after.st_ino
+                            or mtime_ns_before != mtime_ns_after
+                            or stat_fd.st_size != stat_after.st_size
+                        ):
                             # File was modified or replaced during reading; recalculate once
                             return self.calculate_hashes(path, algorithms, toctou_check=False)
                     except (OSError, ValueError):
@@ -172,12 +183,16 @@ class HashEngine:
 
         return {name: h.hexdigest() for name, h in hashers.items()}
 
-    def hash_single_file(self, file_path: Union[str, Path], algorithms: Optional[List[str]] = None) -> HashResult:
+    def hash_single_file(
+        self, file_path: Union[str, Path], algorithms: Optional[List[str]] = None
+    ) -> HashResult:
         """Returns a structured HashResult for a single file, catching errors safely."""
         p = Path(file_path)
         try:
             st = p.stat()
-            hashes = self.calculate_hashes(p, algorithms=algorithms or ["sha256", "md5", "sha512", "blake2b"])
+            hashes = self.calculate_hashes(
+                p, algorithms=algorithms or ["sha256", "md5", "sha512", "blake2b"]
+            )
             return HashResult(
                 path=str(p.resolve()),
                 sha256=hashes.get("sha256", ""),
@@ -186,20 +201,16 @@ class HashEngine:
                 sha512=hashes.get("sha512"),
                 blake2b=hashes.get("blake2b"),
                 size=st.st_size,
-                mtime=st.st_mtime
+                mtime=st.st_mtime,
             )
         except Exception as e:
-            return HashResult(
-                path=str(p),
-                sha256="",
-                error=str(e)
-            )
+            return HashResult(path=str(p), sha256="", error=str(e))
 
     def hash_parallel(
         self,
         file_paths: List[Union[str, Path]],
         algorithms: Optional[List[str]] = None,
-        progress_cb: Optional[Callable[[int, int, HashResult], None]] = None
+        progress_cb: Optional[Callable[[int, int, HashResult], None]] = None,
     ) -> List[HashResult]:
         """Hashes a list of files in parallel using a ThreadPoolExecutor."""
         results: List[HashResult] = []

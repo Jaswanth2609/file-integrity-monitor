@@ -15,34 +15,41 @@ from typing import Optional, Dict, Any
 
 _RUN_CORRELATION_ID: Optional[str] = None
 
+
 def get_correlation_id() -> str:
     global _RUN_CORRELATION_ID
     if not _RUN_CORRELATION_ID:
         _RUN_CORRELATION_ID = str(uuid.uuid4())[:8]
     return _RUN_CORRELATION_ID
 
+
 def set_correlation_id(cid: Optional[str] = None) -> str:
     global _RUN_CORRELATION_ID
     _RUN_CORRELATION_ID = cid or str(uuid.uuid4())[:8]
     return _RUN_CORRELATION_ID
 
+
 def redact_secrets_text(text: str) -> str:
     """Redacts API keys, bearer tokens, and secrets from a string."""
     text = re.sub(
         r'(?i)(api[_-]?key|token|secret|password|bearer\s+)[:=\s\\"]+([a-zA-Z0-9_\-\.]{8,})',
-        r'\1: [REDACTED]',
-        text
+        r"\1: [REDACTED]",
+        text,
     )
     return text
 
+
 class SecretRedactingFormatter(logging.Formatter):
     """Redacts API keys, bearer tokens, and secrets from standard logs."""
+
     def format(self, record: logging.LogRecord) -> str:
         msg = super().format(record)
         return redact_secrets_text(msg)
 
+
 class JSONLogFormatter(logging.Formatter):
     """Formats log records as newline-delimited JSON for ELK/Splunk/Wazuh ingestion."""
+
     def format(self, record: logging.LogRecord) -> str:
         msg_str = record.getMessage()
         msg_redacted = redact_secrets_text(msg_str)
@@ -59,25 +66,26 @@ class JSONLogFormatter(logging.Formatter):
             log_entry["exception"] = self.formatException(record.exc_info)
         if hasattr(record, "extra_data") and isinstance(record.extra_data, dict):
             log_entry.update(record.extra_data)
-        
+
         serialized = json.dumps(log_entry, default=str)
         return redact_secrets_text(serialized)
+
 
 def setup_logger(
     name: str = "fim",
     log_file: Optional[str] = None,
     level: str = "INFO",
     json_format: bool = False,
-    console_output: bool = True
+    console_output: bool = True,
 ) -> logging.Logger:
     """Configures and returns a centralized FIM logger."""
     logger = logging.getLogger(name)
     log_level = getattr(logging, level.upper(), logging.INFO)
     logger.setLevel(log_level)
-    
+
     if logger.handlers:
         logger.handlers.clear()
-        
+
     logger.propagate = False
 
     formatter: logging.Formatter
@@ -86,15 +94,17 @@ def setup_logger(
     else:
         formatter = SecretRedactingFormatter(
             fmt="%(asctime)s [%(levelname)s] [%(name)s] [cid:%(correlation_id)s] %(message)s",
-            datefmt="%Y-%m-%d %H:%M:%S"
+            datefmt="%Y-%m-%d %H:%M:%S",
         )
 
     old_factory = logging.getLogRecordFactory()
+
     def record_factory(*args, **kwargs):
         record = old_factory(*args, **kwargs)
         if not hasattr(record, "correlation_id"):
             record.correlation_id = get_correlation_id()
         return record
+
     logging.setLogRecordFactory(record_factory)
 
     if console_output:
@@ -119,5 +129,6 @@ def setup_logger(
             sys.stderr.write(f"Warning: Could not initialize log file handler: {e}\n")
 
     return logger
+
 
 logger = setup_logger()

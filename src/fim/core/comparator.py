@@ -8,21 +8,21 @@ Integrates YARA scanning on modified/added files and OS package manager verifica
 import hashlib
 import logging
 import os
-import stat
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
-from .baseline import BaselineManager, BaselineManifest
+from .baseline import BaselineEntry, BaselineManager
 from .hasher import HashEngine
 from .pkg_manager import PackageManagerVerifier
 from .rules import ChangeType, RuleEngine, Severity
 from ..config import ConfigManager
-from ..intel.yara_scanner import YaraEngine, YaraMatch
+from ..intel.yara_scanner import YaraEngine
 from ..storage.db import DatabaseManager
 
 logger = logging.getLogger("fim.comparator")
+
 
 @dataclass
 class Finding:
@@ -48,8 +48,9 @@ class Finding:
             "old_hash": self.old_hash,
             "new_hash": self.new_hash,
             "attack_id": self.attack_id,
-            "details": self.details
+            "details": self.details,
         }
+
 
 @dataclass
 class VerificationSummary:
@@ -84,7 +85,11 @@ class VerificationSummary:
 
     @property
     def permission_count(self) -> int:
-        return sum(1 for f in self.findings if f.change_type in [ChangeType.PERMISSION_CHANGED, ChangeType.OWNER_CHANGED])
+        return sum(
+            1
+            for f in self.findings
+            if f.change_type in [ChangeType.PERMISSION_CHANGED, ChangeType.OWNER_CHANGED]
+        )
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -97,13 +102,16 @@ class VerificationSummary:
             "current_files_scanned": self.current_files_scanned,
             "changes_found": len(self.findings),
             "exit_code": self.exit_code,
-            "findings": [f.to_dict() for f in self.findings]
+            "findings": [f.to_dict() for f in self.findings],
         }
+
 
 class IntegrityComparator:
     """Orchestrates comparison of current live files against signed baseline."""
 
-    def __init__(self, config: Optional[ConfigManager] = None, db: Optional[DatabaseManager] = None):
+    def __init__(
+        self, config: Optional[ConfigManager] = None, db: Optional[DatabaseManager] = None
+    ):
         self.config = config or ConfigManager()
         self.db = db or DatabaseManager(self.config.db_path)
         self.baseline_mgr = BaselineManager(self.config, self.db)
@@ -113,7 +121,7 @@ class IntegrityComparator:
         self.hasher = HashEngine(
             chunk_size=self.config.chunk_size_bytes,
             default_algo=self.config.get("hashing.default_algorithm", "sha256"),
-            max_workers=int(self.config.get("hashing.max_workers", 4))
+            max_workers=int(self.config.get("hashing.max_workers", 4)),
         )
 
     def check_baseline(
@@ -123,7 +131,7 @@ class IntegrityComparator:
         accept_migration: bool = False,
         public_key_path: Optional[Union[str, Path]] = None,
         enable_yara: bool = True,
-        old_key: Optional[str] = None
+        old_key: Optional[str] = None,
     ) -> VerificationSummary:
         """
         Executes a full verification check against the named baseline.
@@ -138,7 +146,7 @@ class IntegrityComparator:
             verify=True,
             accept_migration=accept_migration,
             public_key_path=public_key_path,
-            old_key=old_key
+            old_key=old_key,
         )
         baseline_files = baseline.files
 
@@ -175,44 +183,57 @@ class IntegrityComparator:
                 # Check if present in baseline
                 if path_str in baseline_files:
                     b_entry = baseline_files[path_str]
-                    
+
                     # Symlink type check
                     if is_link != getattr(b_entry, "is_symlink", False):
                         sev = Severity.CRITICAL
-                        desc = "File type changed to symlink (potential symlink swap / TOCTOU exploit)" if is_link else "Symlink replaced with regular file"
-                        findings.append(Finding(
-                            path=path_str,
-                            change_type=ChangeType.MODIFIED,
-                            severity=sev,
-                            description=desc,
-                            old_hash=b_entry.hash,
-                            new_hash=curr_hash,
-                            attack_id="T1036",
-                            old_mode=b_entry.mode,
-                            new_mode=st.st_mode,
-                            details={"symlink_swap": True, "target": link_target}
-                        ))
+                        desc = (
+                            "File type changed to symlink (potential symlink swap / TOCTOU exploit)"
+                            if is_link
+                            else "Symlink replaced with regular file"
+                        )
+                        findings.append(
+                            Finding(
+                                path=path_str,
+                                change_type=ChangeType.MODIFIED,
+                                severity=sev,
+                                description=desc,
+                                old_hash=b_entry.hash,
+                                new_hash=curr_hash,
+                                attack_id="T1036",
+                                old_mode=b_entry.mode,
+                                new_mode=st.st_mode,
+                                details={"symlink_swap": True, "target": link_target},
+                            )
+                        )
                     elif is_link and link_target != getattr(b_entry, "symlink_target", None):
                         sev = Severity.HIGH
                         desc = f"Symlink target redirected: '{getattr(b_entry, 'symlink_target', None)}' -> '{link_target}'"
-                        findings.append(Finding(
-                            path=path_str,
-                            change_type=ChangeType.MODIFIED,
-                            severity=sev,
-                            description=desc,
-                            old_hash=b_entry.hash,
-                            new_hash=curr_hash,
-                            attack_id="T1036",
-                            details={"old_target": getattr(b_entry, "symlink_target", None), "new_target": link_target}
-                        ))
+                        findings.append(
+                            Finding(
+                                path=path_str,
+                                change_type=ChangeType.MODIFIED,
+                                severity=sev,
+                                description=desc,
+                                old_hash=b_entry.hash,
+                                new_hash=curr_hash,
+                                attack_id="T1036",
+                                details={
+                                    "old_target": getattr(b_entry, "symlink_target", None),
+                                    "new_target": link_target,
+                                },
+                            )
+                        )
                     # Content check
                     elif curr_hash != b_entry.hash:
                         sev, attack_id, desc = self.rule_engine.classify_change(
                             path_str, ChangeType.MODIFIED, is_executable=bool(st.st_mode & 0o111)
                         )
-                        
+
                         # Package manager verification cross-reference
-                        is_pkg_managed, pkg_name, pkg_info = self.pkg_verifier.check_file_origin(path_str)
+                        is_pkg_managed, pkg_name, pkg_info = self.pkg_verifier.check_file_origin(
+                            path_str
+                        )
                         details: Dict[str, Any] = {"package_managed": is_pkg_managed}
                         if is_pkg_managed:
                             details["package_name"] = pkg_name
@@ -223,67 +244,81 @@ class IntegrityComparator:
                             yara_matches = self.yara_engine.scan_file(fp)
                             if yara_matches:
                                 top_match = yara_matches[0]
-                                sev = Severity.CRITICAL if top_match.severity == "CRITICAL" else Severity.HIGH
+                                sev = (
+                                    Severity.CRITICAL
+                                    if top_match.severity == "CRITICAL"
+                                    else Severity.HIGH
+                                )
                                 attack_id = top_match.attack_id
                                 desc += f" [YARA MATCH: {top_match.rule_name} - {top_match.description}]"
                                 details["yara_matches"] = [m.rule_name for m in yara_matches]
 
-                        findings.append(Finding(
-                            path=path_str,
-                            change_type=ChangeType.MODIFIED,
-                            severity=sev,
-                            description=desc,
-                            old_hash=b_entry.hash,
-                            new_hash=curr_hash,
-                            attack_id=attack_id,
-                            old_mode=b_entry.mode,
-                            new_mode=st.st_mode,
-                            details=details
-                        ))
-                    
+                        findings.append(
+                            Finding(
+                                path=path_str,
+                                change_type=ChangeType.MODIFIED,
+                                severity=sev,
+                                description=desc,
+                                old_hash=b_entry.hash,
+                                new_hash=curr_hash,
+                                attack_id=attack_id,
+                                old_mode=b_entry.mode,
+                                new_mode=st.st_mode,
+                                details=details,
+                            )
+                        )
+
                     # Permission / Mode check
                     elif (st.st_mode & 0o777) != (b_entry.mode & 0o777):
                         mode_diff = f"{oct(b_entry.mode & 0o777)} -> {oct(st.st_mode & 0o777)}"
                         sev, attack_id, desc = self.rule_engine.classify_change(
                             path_str, ChangeType.PERMISSION_CHANGED, mode_diff=mode_diff
                         )
-                        findings.append(Finding(
-                            path=path_str,
-                            change_type=ChangeType.PERMISSION_CHANGED,
-                            severity=sev,
-                            description=desc,
-                            old_hash=b_entry.hash,
-                            new_hash=curr_hash,
-                            attack_id=attack_id,
-                            old_mode=b_entry.mode,
-                            new_mode=st.st_mode,
-                            details={"mode_diff": mode_diff}
-                        ))
+                        findings.append(
+                            Finding(
+                                path=path_str,
+                                change_type=ChangeType.PERMISSION_CHANGED,
+                                severity=sev,
+                                description=desc,
+                                old_hash=b_entry.hash,
+                                new_hash=curr_hash,
+                                attack_id=attack_id,
+                                old_mode=b_entry.mode,
+                                new_mode=st.st_mode,
+                                details={"mode_diff": mode_diff},
+                            )
+                        )
 
                     # Owner / Group check
-                    elif hasattr(st, "st_uid") and (st.st_uid != b_entry.uid or st.st_gid != b_entry.gid):
+                    elif hasattr(st, "st_uid") and (
+                        st.st_uid != b_entry.uid or st.st_gid != b_entry.gid
+                    ):
                         diff_str = f"uid:{b_entry.uid}->{st.st_uid}, gid:{b_entry.gid}->{st.st_gid}"
                         sev, attack_id, desc = self.rule_engine.classify_change(
                             path_str, ChangeType.OWNER_CHANGED, mode_diff=diff_str
                         )
-                        findings.append(Finding(
-                            path=path_str,
-                            change_type=ChangeType.OWNER_CHANGED,
-                            severity=sev,
-                            description=desc,
-                            old_hash=b_entry.hash,
-                            new_hash=curr_hash,
-                            attack_id=attack_id,
-                            details={"owner_diff": diff_str}
-                        ))
+                        findings.append(
+                            Finding(
+                                path=path_str,
+                                change_type=ChangeType.OWNER_CHANGED,
+                                severity=sev,
+                                description=desc,
+                                old_hash=b_entry.hash,
+                                new_hash=curr_hash,
+                                attack_id=attack_id,
+                                details={"owner_diff": diff_str},
+                            )
+                        )
 
             except Exception as e:
-                findings.append(Finding(
-                    path=path_str,
-                    change_type=ChangeType.MODIFIED,
-                    severity=Severity.HIGH,
-                    description=f"Error accessing file during check: {e}"
-                ))
+                findings.append(
+                    Finding(
+                        path=path_str,
+                        change_type=ChangeType.MODIFIED,
+                        severity=Severity.HIGH,
+                        description=f"Error accessing file during check: {e}",
+                    )
+                )
 
         # 4. Check for DELETED and RENAMED files
         deleted_candidates: List[Tuple[str, BaselineEntry]] = []
@@ -299,31 +334,35 @@ class IntegrityComparator:
 
             if new_paths:
                 new_p = new_paths[0]
-                findings.append(Finding(
-                    path=new_p,
-                    change_type=ChangeType.RENAMED,
-                    severity=Severity.MEDIUM,
-                    description=f"File renamed/relocated from '{del_path}' to '{new_p}'",
-                    old_hash=b_entry.hash,
-                    new_hash=b_entry.hash,
-                    attack_id="T1036",
-                    details={"old_path": del_path, "new_path": new_p}
-                ))
+                findings.append(
+                    Finding(
+                        path=new_p,
+                        change_type=ChangeType.RENAMED,
+                        severity=Severity.MEDIUM,
+                        description=f"File renamed/relocated from '{del_path}' to '{new_p}'",
+                        old_hash=b_entry.hash,
+                        new_hash=b_entry.hash,
+                        attack_id="T1036",
+                        details={"old_path": del_path, "new_path": new_p},
+                    )
+                )
             else:
-                sev, attack_id, desc = self.rule_engine.classify_change(del_path, ChangeType.DELETED)
-                findings.append(Finding(
-                    path=del_path,
-                    change_type=ChangeType.DELETED,
-                    severity=sev,
-                    description=desc,
-                    old_hash=b_entry.hash,
-                    attack_id=attack_id
-                ))
+                sev, attack_id, desc = self.rule_engine.classify_change(
+                    del_path, ChangeType.DELETED
+                )
+                findings.append(
+                    Finding(
+                        path=del_path,
+                        change_type=ChangeType.DELETED,
+                        severity=sev,
+                        description=desc,
+                        old_hash=b_entry.hash,
+                        attack_id=attack_id,
+                    )
+                )
 
         # 5. Check for newly ADDED files (that were not renames)
-        renamed_new_paths = {
-            f.path for f in findings if f.change_type == ChangeType.RENAMED
-        }
+        renamed_new_paths = {f.path for f in findings if f.change_type == ChangeType.RENAMED}
         for path_str, fp in current_files_map.items():
             if path_str not in baseline_files and path_str not in renamed_new_paths:
                 is_link = os.path.islink(fp)
@@ -346,21 +385,25 @@ class IntegrityComparator:
                     yara_matches = self.yara_engine.scan_file(fp)
                     if yara_matches:
                         top_match = yara_matches[0]
-                        sev = Severity.CRITICAL if top_match.severity == "CRITICAL" else Severity.HIGH
+                        sev = (
+                            Severity.CRITICAL if top_match.severity == "CRITICAL" else Severity.HIGH
+                        )
                         attack_id = top_match.attack_id
                         desc += f" [YARA MATCH: {top_match.rule_name} - {top_match.description}]"
                         details["yara_matches"] = [m.rule_name for m in yara_matches]
 
-                findings.append(Finding(
-                    path=path_str,
-                    change_type=ChangeType.ADDED,
-                    severity=sev,
-                    description=desc,
-                    new_hash=curr_h,
-                    attack_id=attack_id,
-                    new_mode=mode_val,
-                    details=details
-                ))
+                findings.append(
+                    Finding(
+                        path=path_str,
+                        change_type=ChangeType.ADDED,
+                        severity=sev,
+                        description=desc,
+                        new_hash=curr_h,
+                        attack_id=attack_id,
+                        new_mode=mode_val,
+                        details=details,
+                    )
+                )
 
         finished_at = time.time()
         exit_code = 1 if len(findings) > 0 else 0
@@ -371,7 +414,7 @@ class IntegrityComparator:
             files_checked=total_live,
             changes_found=len(findings),
             exit_code=exit_code,
-            findings_data=findings_payload
+            findings_data=findings_payload,
         )
 
         return VerificationSummary(
@@ -382,5 +425,5 @@ class IntegrityComparator:
             current_files_scanned=total_live,
             findings=findings,
             exit_code=exit_code,
-            run_id=run_id
+            run_id=run_id,
         )

@@ -7,11 +7,10 @@ Supports both direct string returns (for HTTP API endpoints) and file persistenc
 import csv
 import io
 import json
-import os
-import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, Optional, Union
+
 
 class ReportGenerator:
     """Generates structured audit reports in multiple formats."""
@@ -32,7 +31,7 @@ class ReportGenerator:
             "schema_version": "2.1.0",
             "generator": "File Integrity Monitor (FIM) v2.1",
             "exported_at": datetime.now(timezone.utc).isoformat(),
-            "report_data": norm
+            "report_data": norm,
         }
         content = json.dumps(wrapped, indent=2)
 
@@ -52,7 +51,15 @@ class ReportGenerator:
         if not findings and isinstance(norm.get("files"), list):
             findings = norm.get("files", [])
 
-        fieldnames = ["path", "change_type", "severity", "description", "old_hash", "new_hash", "attack_id"]
+        fieldnames = [
+            "path",
+            "change_type",
+            "severity",
+            "description",
+            "old_hash",
+            "new_hash",
+            "attack_id",
+        ]
 
         output_io = io.StringIO()
         writer = csv.DictWriter(output_io, fieldnames=fieldnames, extrasaction="ignore")
@@ -94,13 +101,15 @@ class ReportGenerator:
             lines.append(" [✓] No unauthorized changes or integrity violations detected.")
         else:
             for idx, f in enumerate(findings, 1):
-                lines.append(f" [{idx}] [{f.get('severity', 'INFO')}] {f.get('change_type', 'EVENT')}: {f.get('path')}")
+                lines.append(
+                    f" [{idx}] [{f.get('severity', 'INFO')}] {f.get('change_type', 'EVENT')}: {f.get('path')}"
+                )
                 lines.append(f"     Details   : {f.get('description', 'N/A')}")
-                if f.get('attack_id'):
+                if f.get("attack_id"):
                     lines.append(f"     MITRE ID  : {f.get('attack_id')}")
-                if f.get('old_hash'):
+                if f.get("old_hash"):
                     lines.append(f"     Old Hash  : {f.get('old_hash')}")
-                if f.get('new_hash'):
+                if f.get("new_hash"):
                     lines.append(f"     New Hash  : {f.get('new_hash')}")
                 lines.append("")
 
@@ -121,7 +130,7 @@ class ReportGenerator:
         norm = ReportGenerator._normalize_data(data)
         findings = norm.get("findings", [])
         profile = norm.get("profile", "Default")
-        exported_at = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')
+        exported_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
 
         crit_count = sum(1 for f in findings if f.get("severity") == "CRITICAL")
         high_count = sum(1 for f in findings if f.get("severity") == "HIGH")
@@ -143,7 +152,11 @@ class ReportGenerator:
                 </tr>
             """)
 
-        table_body = "".join(rows_html) if rows_html else '<tr><td colspan="6" style="text-align:center; padding: 2rem;">No file changes detected. Integrity verified.</td></tr>'
+        table_body = (
+            "".join(rows_html)
+            if rows_html
+            else '<tr><td colspan="6" style="text-align:center; padding: 2rem;">No file changes detected. Integrity verified.</td></tr>'
+        )
 
         html_content = f"""<!DOCTYPE html>
 <html lang="en">

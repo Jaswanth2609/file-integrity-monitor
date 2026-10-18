@@ -7,35 +7,38 @@ import re
 from pathlib import Path
 from typing import Dict, List, Optional, Union
 
-from .base import IntelReport, Verdict
-
 # High-confidence signature patterns
 HEURISTIC_RULES = [
     {
         "id": "RULE_WEBSHELL_PHP",
         "name": "PHP WebShell Generic Payload",
-        "pattern": re.compile(rb'(?i)(eval\s*\(\s*(base64_decode|gzinflate|str_rot13)|system\s*\(\s*\$_REQUEST|passthru\s*\(\s*\$_POST|assert\s*\(\s*\$_GET)'),
-        "severity": "CRITICAL"
+        "pattern": re.compile(
+            rb"(?i)(eval\s*\(\s*(base64_decode|gzinflate|str_rot13)|system\s*\(\s*\$_REQUEST|passthru\s*\(\s*\$_POST|assert\s*\(\s*\$_GET)"
+        ),
+        "severity": "CRITICAL",
     },
     {
         "id": "RULE_REVERSE_SHELL_BASH",
         "name": "Bash Reverse TCP Shell",
-        "pattern": re.compile(rb'/bin/bash\s+-i\s+>&\s+/dev/tcp/'),
-        "severity": "CRITICAL"
+        "pattern": re.compile(rb"/bin/bash\s+-i\s+>&\s+/dev/tcp/"),
+        "severity": "CRITICAL",
     },
     {
         "id": "RULE_POWERSHELL_ENCODED",
         "name": "PowerShell Hidden Encoded Command",
-        "pattern": re.compile(rb'(?i)powershell(\.exe)?\s+(-w(indowstyle)?\s+hidden\s+)?-enc(odedcommand)?\s+[A-Za-z0-9+/=]{20,}'),
-        "severity": "HIGH"
+        "pattern": re.compile(
+            rb"(?i)powershell(\.exe)?\s+(-w(indowstyle)?\s+hidden\s+)?-enc(odedcommand)?\s+[A-Za-z0-9+/=]{20,}"
+        ),
+        "severity": "HIGH",
     },
     {
         "id": "RULE_PYTHON_DOWNLOAD_EXEC",
         "name": "Python In-Memory Download & Exec",
-        "pattern": re.compile(rb'exec\s*\(\s*urllib\.request\.urlopen\([^)]+\)\.read\(\)\s*\)'),
-        "severity": "HIGH"
-    }
+        "pattern": re.compile(rb"exec\s*\(\s*urllib\.request\.urlopen\([^)]+\)\.read\(\)\s*\)"),
+        "severity": "HIGH",
+    },
 ]
+
 
 class LocalSignatureScanner:
     """Performs local regex and signature analysis on suspect files."""
@@ -65,10 +68,6 @@ class LocalSignatureScanner:
                     highest_sev = "HIGH"
 
         if matched_rules:
-            return {
-                "status": "MATCHED",
-                "severity": highest_sev,
-                "matches": matched_rules
-            }
+            return {"status": "MATCHED", "severity": highest_sev, "matches": matched_rules}
 
         return None

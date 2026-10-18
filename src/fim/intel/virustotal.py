@@ -10,6 +10,7 @@ from typing import Any, Dict, Optional
 
 try:
     import requests
+
     HAVE_REQUESTS = True
 except ImportError:
     HAVE_REQUESTS = False
@@ -17,8 +18,8 @@ except ImportError:
 from .base import BaseIntelProvider, IntelReport, Verdict
 from .ratelimit import TokenBucketRateLimiter, QuotaTracker
 from ..config import ConfigManager
-from ..errors import InvalidAPIKeyError, RateLimitExceededError, NetworkError
 from ..storage.db import DatabaseManager
+
 
 class VirusTotalClient(BaseIntelProvider):
     """Client for VirusTotal API v3."""
@@ -29,7 +30,7 @@ class VirusTotalClient(BaseIntelProvider):
         self,
         api_key: Optional[str] = None,
         config: Optional[ConfigManager] = None,
-        db: Optional[DatabaseManager] = None
+        db: Optional[DatabaseManager] = None,
     ):
         super().__init__("VirusTotal")
         self.config = config or ConfigManager()
@@ -38,7 +39,9 @@ class VirusTotalClient(BaseIntelProvider):
 
         rpm = float(self.config.get("virustotal.rate_limit_rpm", 4))
         self.rate_limiter = TokenBucketRateLimiter(requests_per_minute=rpm)
-        self.quota_tracker = QuotaTracker(daily_limit=int(self.config.get("virustotal.max_daily_requests", 500)))
+        self.quota_tracker = QuotaTracker(
+            daily_limit=int(self.config.get("virustotal.max_daily_requests", 500))
+        )
         self.timeout = int(self.config.get("virustotal.timeout_seconds", 15))
         self.max_retries = int(self.config.get("virustotal.max_retries", 3))
         self.cache_ttl = int(self.config.get("virustotal.cache_ttl_hours", 24)) * 3600
@@ -58,12 +61,14 @@ class VirusTotalClient(BaseIntelProvider):
                 return IntelReport(
                     provider=self.name,
                     query_hash=clean_hash,
-                    verdict=Verdict(v_str) if v_str in Verdict._value2member_map_ else Verdict.UNKNOWN,
+                    verdict=(
+                        Verdict(v_str) if v_str in Verdict._value2member_map_ else Verdict.UNKNOWN
+                    ),
                     malicious_count=cached.get("detections", 0),
                     total_engines=cached.get("total_engines", 0),
                     cached=True,
                     details=cached.get("raw_json", {}),
-                    status="SUCCESS"
+                    status="SUCCESS",
                 )
 
         if not self.api_key:
@@ -72,7 +77,7 @@ class VirusTotalClient(BaseIntelProvider):
                 query_hash=clean_hash,
                 verdict=Verdict.UNKNOWN,
                 status="NO_API_KEY",
-                details={"error": "VirusTotal API key not configured."}
+                details={"error": "VirusTotal API key not configured."},
             )
 
         if not self.quota_tracker.can_request():
@@ -81,7 +86,7 @@ class VirusTotalClient(BaseIntelProvider):
                 query_hash=clean_hash,
                 verdict=Verdict.UNKNOWN,
                 status="QUOTA_EXCEEDED",
-                details={"error": "Daily VirusTotal request quota reached."}
+                details={"error": "Daily VirusTotal request quota reached."},
             )
 
         # 2. Rate limit token acquisition
@@ -90,10 +95,7 @@ class VirusTotalClient(BaseIntelProvider):
 
         # 3. HTTP Request with exponential backoff
         url = f"{self.BASE_URL}{clean_hash}"
-        headers = {
-            "x-apikey": self.api_key,
-            "User-Agent": "FIM-v2.0-AgenticMonitor/1.0"
-        }
+        headers = {"x-apikey": self.api_key, "User-Agent": "FIM-v2.0-AgenticMonitor/1.0"}
 
         raw_data: Optional[Dict[str, Any]] = None
         status_code = 0
@@ -113,9 +115,11 @@ class VirusTotalClient(BaseIntelProvider):
                             query_hash=clean_hash,
                             verdict=Verdict.UNKNOWN,
                             status="NOT_FOUND",
-                            details={"message": "Hash not found in VirusTotal database."}
+                            details={"message": "Hash not found in VirusTotal database."},
                         )
-                        self.db.cache_intel(clean_hash, self.name, "UNKNOWN", 0, 0, report.details, self.cache_ttl)
+                        self.db.cache_intel(
+                            clean_hash, self.name, "UNKNOWN", 0, 0, report.details, self.cache_ttl
+                        )
                         return report
                     elif status_code == 401 or status_code == 403:
                         return IntelReport(
@@ -123,15 +127,17 @@ class VirusTotalClient(BaseIntelProvider):
                             query_hash=clean_hash,
                             verdict=Verdict.UNKNOWN,
                             status="AUTH_ERROR",
-                            details={"error": "Invalid API key or unauthorized access."}
+                            details={"error": "Invalid API key or unauthorized access."},
                         )
                     elif status_code == 429:
-                        time.sleep(2 ** attempt + 1)
+                        time.sleep(2**attempt + 1)
                         continue
                 else:
                     # Native urllib fallback
                     req = urllib.request.Request(url, headers=headers)
-                    with urllib.request.urlopen(req, timeout=self.timeout) as response:
+                    with urllib.request.urlopen(
+                        req, timeout=self.timeout
+                    ) as response:  # nosec B310
                         status_code = response.getcode()
                         if status_code == 200:
                             raw_data = json.loads(response.read().decode("utf-8"))
@@ -145,9 +151,11 @@ class VirusTotalClient(BaseIntelProvider):
                         query_hash=clean_hash,
                         verdict=Verdict.UNKNOWN,
                         status="NOT_FOUND",
-                        details={"message": "Hash not found in VirusTotal database."}
+                        details={"message": "Hash not found in VirusTotal database."},
                     )
-                    self.db.cache_intel(clean_hash, self.name, "UNKNOWN", 0, 0, report.details, self.cache_ttl)
+                    self.db.cache_intel(
+                        clean_hash, self.name, "UNKNOWN", 0, 0, report.details, self.cache_ttl
+                    )
                     return report
                 elif status_code in (401, 403):
                     return IntelReport(
@@ -155,10 +163,10 @@ class VirusTotalClient(BaseIntelProvider):
                         query_hash=clean_hash,
                         verdict=Verdict.UNKNOWN,
                         status="AUTH_ERROR",
-                        details={"error": "Invalid API key."}
+                        details={"error": "Invalid API key."},
                     )
                 elif status_code == 429:
-                    time.sleep(2 ** attempt + 1)
+                    time.sleep(2**attempt + 1)
                     continue
             except Exception as e:
                 if attempt == self.max_retries - 1:
@@ -167,16 +175,13 @@ class VirusTotalClient(BaseIntelProvider):
                         query_hash=clean_hash,
                         verdict=Verdict.UNKNOWN,
                         status="NETWORK_ERROR",
-                        details={"error": str(e)}
+                        details={"error": str(e)},
                     )
                 time.sleep(1.0)
 
         if not raw_data or "data" not in raw_data:
             return IntelReport(
-                provider=self.name,
-                query_hash=clean_hash,
-                verdict=Verdict.UNKNOWN,
-                status="NO_DATA"
+                provider=self.name, query_hash=clean_hash, verdict=Verdict.UNKNOWN, status="NO_DATA"
             )
 
         # 4. Parse Attributes & Analysis Stats
@@ -217,7 +222,7 @@ class VirusTotalClient(BaseIntelProvider):
             threat_names=threat_names[:10],
             tags=tags,
             details=stats,
-            status="SUCCESS"
+            status="SUCCESS",
         )
 
         # 5. Persist into SQLite cache
@@ -228,7 +233,7 @@ class VirusTotalClient(BaseIntelProvider):
             detections=malicious,
             total_engines=total_engines,
             raw_json=report.to_dict(),
-            ttl_seconds=self.cache_ttl
+            ttl_seconds=self.cache_ttl,
         )
 
         return report

@@ -7,16 +7,16 @@ signature evaluator as an automatic fallback.
 """
 
 import logging
-import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 logger = logging.getLogger("fim.yara")
 
 try:
     import yara
+
     HAVE_NATIVE_YARA = True
 except ImportError:
     HAVE_NATIVE_YARA = False
@@ -85,6 +85,7 @@ rule Obfuscated_Script_Dropper {
 }
 """
 
+
 @dataclass
 class YaraMatch:
     rule_name: str
@@ -92,6 +93,7 @@ class YaraMatch:
     severity: str
     attack_id: str
     matched_strings: List[str] = field(default_factory=list)
+
 
 class PurePythonYaraParser:
     """Lightweight rule parser and string/regex/hex pattern matcher for YARA rules."""
@@ -127,14 +129,14 @@ class PurePythonYaraParser:
                         sval = sval.strip()
                         nocase = "nocase" in sval.lower()
                         # Clean value
-                        cleaned = re.sub(r"\s+(nocase|ascii|wide)", "", sval, flags=re.IGNORECASE).strip().strip('"')
+                        cleaned = (
+                            re.sub(r"\s+(nocase|ascii|wide)", "", sval, flags=re.IGNORECASE)
+                            .strip()
+                            .strip('"')
+                        )
                         strings.append((sname, cleaned, nocase))
 
-            self.rules.append({
-                "name": rname,
-                "meta": meta,
-                "strings": strings
-            })
+            self.rules.append({"name": rname, "meta": meta, "strings": strings})
 
     def match_content(self, data: bytes) -> List[YaraMatch]:
         matches: List[YaraMatch] = []
@@ -152,15 +154,18 @@ class PurePythonYaraParser:
                         matched_strs.append(sname)
 
             if matched_strs:
-                matches.append(YaraMatch(
-                    rule_name=r["name"],
-                    description=r["meta"].get("description", f"Matched rule {r['name']}"),
-                    severity=r["meta"].get("severity", "HIGH"),
-                    attack_id=r["meta"].get("attack_id", "T1059"),
-                    matched_strings=matched_strs
-                ))
+                matches.append(
+                    YaraMatch(
+                        rule_name=r["name"],
+                        description=r["meta"].get("description", f"Matched rule {r['name']}"),
+                        severity=r["meta"].get("severity", "HIGH"),
+                        attack_id=r["meta"].get("attack_id", "T1059"),
+                        matched_strings=matched_strs,
+                    )
+                )
 
         return matches
+
 
 class YaraEngine:
     """High-level YARA scanning engine with native and pure-python backends."""
@@ -205,7 +210,7 @@ class YaraEngine:
             sz = p.stat().st_size
             if sz > max_size_mb * 1024 * 1024:
                 # Read first 1MB for large files
-                data = p.read_bytes()[:1024 * 1024]
+                data = p.read_bytes()[: 1024 * 1024]
             else:
                 data = p.read_bytes()
         except Exception as e:
@@ -218,13 +223,17 @@ class YaraEngine:
                 results = []
                 for m in native_matches:
                     meta = m.meta or {}
-                    results.append(YaraMatch(
-                        rule_name=m.rule,
-                        description=meta.get("description", f"Matched YARA rule {m.rule}"),
-                        severity=meta.get("severity", "HIGH"),
-                        attack_id=meta.get("attack_id", "T1059"),
-                        matched_strings=[s.identifier for s in m.strings] if hasattr(m, "strings") else []
-                    ))
+                    results.append(
+                        YaraMatch(
+                            rule_name=m.rule,
+                            description=meta.get("description", f"Matched YARA rule {m.rule}"),
+                            severity=meta.get("severity", "HIGH"),
+                            attack_id=meta.get("attack_id", "T1059"),
+                            matched_strings=(
+                                [s.identifier for s in m.strings] if hasattr(m, "strings") else []
+                            ),
+                        )
+                    )
                 return results
             except Exception as e:
                 logger.debug(f"Native YARA match error on {p}: {e}")

@@ -4,20 +4,18 @@ Provides rich interactive console UI with colors, status badges, Ed25519 public 
 and unified threat intelligence feeds.
 """
 
-import os
-import sys
 import time
-from pathlib import Path
-from typing import Optional, List, Dict, Any
+from typing import Optional
 
 from ..config import ConfigManager
 from ..core.baseline import BaselineManager
 from ..core.comparator import IntegrityComparator
 from ..core.hasher import HashEngine
-from ..errors import FIMError, BaselineTamperedError
+from ..errors import BaselineTamperedError
 from ..intel.aggregator import ThreatIntelAggregator
 from ..reports.generator import ReportGenerator
 from ..storage.db import DatabaseManager
+
 
 class Colors:
     HEADER = "\033[95m"
@@ -29,6 +27,7 @@ class Colors:
     BOLD = "\033[1m"
     DIM = "\033[2m"
     RESET = "\033[0m"
+
 
 class InteractiveMenu:
     """Terminal UI for File Integrity Monitor v2.1."""
@@ -42,12 +41,14 @@ class InteractiveMenu:
         self.intel = ThreatIntelAggregator(config=self.config, db=self.db)
 
     def _clear(self):
-        os.system("cls" if os.name == "nt" else "clear")
+        print("\033[H\033[J", end="", flush=True)
 
     def _header(self):
-        print(f"{Colors.CYAN}{Colors.BOLD}╔══════════════════════════════════════════════════════════╗")
-        print(f"║     FILE INTEGRITY MONITOR (FIM) v2.1                    ║")
-        print(f"║     Cryptographic Integrity & Threat Intelligence        ║")
+        print(
+            f"{Colors.CYAN}{Colors.BOLD}╔══════════════════════════════════════════════════════════╗"
+        )
+        print("║     FILE INTEGRITY MONITOR (FIM) v2.2                    ║")
+        print("║     Cryptographic Integrity & Threat Intelligence        ║")
         print(f"╚══════════════════════════════════════════════════════════╝{Colors.RESET}\n")
 
     def _select_profile(self) -> Optional[str]:
@@ -67,12 +68,16 @@ class InteractiveMenu:
 
         if len(baselines) == 1:
             b = baselines[0]
-            print(f"Selected baseline: {Colors.CYAN}{b['name']}{Colors.RESET} ({b['file_count']} files)")
+            print(
+                f"Selected baseline: {Colors.CYAN}{b['name']}{Colors.RESET} ({b['file_count']} files)"
+            )
             return b["name"]
 
         print(f"{Colors.BOLD}Available Baseline Profiles:{Colors.RESET}")
         for idx, b in enumerate(baselines, 1):
-            print(f"  [{idx}] {Colors.CYAN}{b['name']}{Colors.RESET} ({b['file_count']} files, algo: {b['algo']})")
+            print(
+                f"  [{idx}] {Colors.CYAN}{b['name']}{Colors.RESET} ({b['file_count']} files, algo: {b['algo']})"
+            )
 
         sel = input(f"\nSelect a baseline [1-{len(baselines)}] (default: 1): ").strip()
         if not sel:
@@ -89,25 +94,25 @@ class InteractiveMenu:
             self._clear()
             self._header()
             print(f"  {Colors.BOLD}[1]{Colors.RESET} Create / Update Baseline")
-            print(f"      Snapshot file metadata and cryptographically sign HMAC / Ed25519")
+            print("      Snapshot file metadata and cryptographically sign HMAC / Ed25519")
             print()
             print(f"  {Colors.BOLD}[2]{Colors.RESET} Check File Integrity")
-            print(f"      Compare live filesystem against signed baseline")
+            print("      Compare live filesystem against signed baseline")
             print()
             print(f"  {Colors.BOLD}[3]{Colors.RESET} Calculate File Hash")
-            print(f"      Compute SHA-256, SHA-512, BLAKE2b, and MD5")
+            print("      Compute SHA-256, SHA-512, BLAKE2b, and MD5")
             print()
             print(f"  {Colors.BOLD}[4]{Colors.RESET} Query Threat Intelligence")
-            print(f"      Check reputation for file hash via Threat Intel Feeds")
+            print("      Check reputation for file hash via Threat Intel Feeds")
             print()
             print(f"  {Colors.BOLD}[5]{Colors.RESET} View Cryptographic Audit Chain")
-            print(f"      Inspect tamper-evident append-only history and anchors")
+            print("      Inspect tamper-evident append-only history and anchors")
             print()
             print(f"  {Colors.BOLD}[6]{Colors.RESET} Generate Audit Report")
-            print(f"      Export findings to HTML, JSON, or CSV")
+            print("      Export findings to HTML, JSON, or CSV")
             print()
             print(f"  {Colors.BOLD}[7]{Colors.RESET} Settings & Configuration")
-            print(f"      Configure API keys, public keys, and alert rules")
+            print("      Configure API keys, public keys, and alert rules")
             print()
             print(f"  {Colors.BOLD}[0]{Colors.RESET} Exit")
             print("-" * 60)
@@ -145,14 +150,25 @@ class InteractiveMenu:
             return
 
         paths = [p.strip() for p in path_input.split(",") if p.strip()]
-        algo = input("Choose hash algorithm [sha256/sha512/blake2b] (default: sha256): ").strip().lower() or "sha256"
+        algo = (
+            input("Choose hash algorithm [sha256/sha512/blake2b] (default: sha256): ")
+            .strip()
+            .lower()
+            or "sha256"
+        )
         if algo not in ("sha256", "sha512", "blake2b"):
             algo = "sha256"
 
-        sign_type = input("Choose signing method [hmac/ed25519] (default: hmac): ").strip().lower() or "hmac"
+        sign_type = (
+            input("Choose signing method [hmac/ed25519] (default: hmac): ").strip().lower()
+            or "hmac"
+        )
         priv_key_path = None
         if sign_type == "ed25519":
-            priv_key_path = input("Enter path to Ed25519 private key (default: ~/.fim/fim_ed25519): ").strip() or "~/.fim/fim_ed25519"
+            priv_key_path = (
+                input("Enter path to Ed25519 private key (default: ~/.fim/fim_ed25519): ").strip()
+                or "~/.fim/fim_ed25519"
+            )
 
         print(f"\nCreating baseline '{name}' for paths: {paths} using {algo}...")
         try:
@@ -162,7 +178,9 @@ class InteractiveMenu:
                 algo=algo,
                 signing_type=sign_type,
                 private_key_path=priv_key_path,
-                progress_callback=lambda idx, total, f: print(f"\rIndexed [{idx}/{total}] files...", end="", flush=True)
+                progress_callback=lambda idx, total, f: print(
+                    f"\rIndexed [{idx}/{total}] files...", end="", flush=True
+                ),
             )
             print(f"\n\n{Colors.GREEN}[✓] Baseline '{name}' created successfully!{Colors.RESET}")
             print(f"Files Indexed   : {len(manifest.files)}")
@@ -170,7 +188,7 @@ class InteractiveMenu:
             print(f"Signature       : {manifest.signature[:20]}... ({sign_type})")
         except Exception as e:
             print(f"\n{Colors.RED}[!] Error creating baseline: {e}{Colors.RESET}")
-        
+
         input("\nPress Enter to return...")
 
     def _menu_check_integrity(self):
@@ -189,22 +207,41 @@ class InteractiveMenu:
         except BaselineTamperedError as e:
             err_text = str(e)
             if "Ed25519" in err_text:
-                print(f"\n{Colors.WARNING}[!] Asymmetric Verification Notice: {err_text}{Colors.RESET}")
-                pub_p = input(f"\n{Colors.BOLD}Enter path to Ed25519 public key (.pub) [default: ~/.fim/fim_ed25519.pub]: {Colors.RESET}").strip() or "~/.fim/fim_ed25519.pub"
+                print(
+                    f"\n{Colors.WARNING}[!] Asymmetric Verification Notice: {err_text}{Colors.RESET}"
+                )
+                pub_p = (
+                    input(
+                        f"\n{Colors.BOLD}Enter path to Ed25519 public key (.pub) [default: ~/.fim/fim_ed25519.pub]: {Colors.RESET}"
+                    ).strip()
+                    or "~/.fim/fim_ed25519.pub"
+                )
                 try:
-                    summary = self.comparator.check_baseline(profile_name=profile, public_key_path=pub_p)
+                    summary = self.comparator.check_baseline(
+                        profile_name=profile, public_key_path=pub_p
+                    )
                     self._display_summary(summary)
                 except Exception as ve:
-                    print(f"\n{Colors.RED}[!] Verification failed with public key: {ve}{Colors.RESET}")
+                    print(
+                        f"\n{Colors.RED}[!] Verification failed with public key: {ve}{Colors.RESET}"
+                    )
 
             elif "master key" in err_text or "fingerprint" in err_text:
                 print(f"\n{Colors.WARNING}[!] {err_text}{Colors.RESET}")
-                choice = input(f"\n{Colors.BOLD}Would you like to migrate this baseline to the new secure key now? [y/N]: {Colors.RESET}").strip().lower()
+                choice = (
+                    input(
+                        f"\n{Colors.BOLD}Would you like to migrate this baseline to the new secure key now? [y/N]: {Colors.RESET}"
+                    )
+                    .strip()
+                    .lower()
+                )
                 if choice == "y":
                     old_k = input(f"{Colors.BOLD}Enter previous master key: {Colors.RESET}").strip()
                     try:
                         self.baseline_mgr.migrate_baseline(profile, old_key=old_k)
-                        print(f"\n{Colors.GREEN}[✓] Baseline '{profile}' successfully migrated! Re-verifying...{Colors.RESET}\n")
+                        print(
+                            f"\n{Colors.GREEN}[✓] Baseline '{profile}' successfully migrated! Re-verifying...{Colors.RESET}\n"
+                        )
                         summary = self.comparator.check_baseline(profile_name=profile)
                         self._display_summary(summary)
                     except Exception as me:
@@ -217,11 +254,15 @@ class InteractiveMenu:
         input("\nPress Enter to return...")
 
     def _display_summary(self, summary):
-        print(f"\nChecked {summary.current_files_scanned} live files against {summary.total_baseline_files} baseline files in {summary.finished_at - summary.started_at:.2f}s.")
+        print(
+            f"\nChecked {summary.current_files_scanned} live files against {summary.total_baseline_files} baseline files in {summary.finished_at - summary.started_at:.2f}s."
+        )
         if not summary.has_changes:
             print(f"{Colors.GREEN}[✓] Clean! No unauthorized changes detected.{Colors.RESET}")
         else:
-            print(f"{Colors.RED}[!] ALERT: {len(summary.findings)} changes detected!{Colors.RESET}\n")
+            print(
+                f"{Colors.RED}[!] ALERT: {len(summary.findings)} changes detected!{Colors.RESET}\n"
+            )
             for f in summary.findings:
                 sev_color = Colors.RED if f.severity in ("CRITICAL", "HIGH") else Colors.WARNING
                 print(f"  {sev_color}[{f.severity}] {f.change_type}: {f.path}{Colors.RESET}")
@@ -255,9 +296,19 @@ class InteractiveMenu:
             return
         print(f"\nQuerying threat intel feeds for: {h}...")
         report = self.intel.query_hash(h)
-        verdict_val = report.verdict.value if hasattr(report.verdict, "value") else str(report.verdict)
-        col = Colors.RED if verdict_val == "MALICIOUS" else (Colors.WARNING if verdict_val == "SUSPICIOUS" else (Colors.GREEN if verdict_val == "SAFE" else Colors.DIM))
-        
+        verdict_val = (
+            report.verdict.value if hasattr(report.verdict, "value") else str(report.verdict)
+        )
+        col = (
+            Colors.RED
+            if verdict_val == "MALICIOUS"
+            else (
+                Colors.WARNING
+                if verdict_val == "SUSPICIOUS"
+                else (Colors.GREEN if verdict_val == "SAFE" else Colors.DIM)
+            )
+        )
+
         print(f"\nProvider   : {report.provider}")
         print(f"Verdict    : {col}{verdict_val}{Colors.RESET}")
         print(f"Detections : {report.detection_ratio}")
@@ -273,7 +324,9 @@ class InteractiveMenu:
         print(f"{Colors.BOLD}--- IMMUTABLE AUDIT CHAIN ---{Colors.RESET}\n")
         valid, err, count = self.db.audit.verify_integrity()
         if valid:
-            print(f"{Colors.GREEN}[✓] Cryptographic Audit Chain Valid ({count} records verified).{Colors.RESET}\n")
+            print(
+                f"{Colors.GREEN}[✓] Cryptographic Audit Chain Valid ({count} records verified).{Colors.RESET}\n"
+            )
         else:
             print(f"{Colors.RED}[!] AUDIT CHAIN BROKEN: {err}{Colors.RESET}\n")
 
@@ -292,7 +345,9 @@ class InteractiveMenu:
             input("\nPress Enter to return...")
             return
 
-        fmt = input("\nSelect format [html/json/csv/txt] (default: html): ").strip().lower() or "html"
+        fmt = (
+            input("\nSelect format [html/json/csv/txt] (default: html): ").strip().lower() or "html"
+        )
         out_path = input(f"Enter output file path (default: reports/audit_report.{fmt}): ").strip()
         if not out_path:
             out_path = f"reports/audit_report.{fmt}"
@@ -317,11 +372,11 @@ class InteractiveMenu:
         self._clear()
         self._header()
         print(f"{Colors.BOLD}--- SETTINGS & CONFIGURATION ---{Colors.RESET}\n")
-        print(f"  [1] Set VirusTotal API Key")
-        print(f"  [2] Set Ed25519 Public Key Path")
-        print(f"  [3] Set Master Secret Key")
-        print(f"  [4] View Current Configuration")
-        print(f"  [0] Back")
+        print("  [1] Set VirusTotal API Key")
+        print("  [2] Set Ed25519 Public Key Path")
+        print("  [3] Set Master Secret Key")
+        print("  [4] View Current Configuration")
+        print("  [0] Back")
         c = input("\nSelect [0-4]: ").strip()
         if c == "1":
             k = input("Enter VirusTotal API Key: ").strip()
@@ -340,6 +395,10 @@ class InteractiveMenu:
             print(f"{Colors.GREEN}Secret key saved.{Colors.RESET}")
         elif c == "4":
             print(f"\nDatabase   : {self.config.db_path}")
-            print(f"VT Key     : {'configured' if self.config.vt_api_key else 'NOT configured (free lookup mode)'}")
-            print(f"Public Key : {self.config.get('signing.public_key_path', '~/.fim/fim_ed25519.pub')}")
+            print(
+                f"VT Key     : {'configured' if self.config.vt_api_key else 'NOT configured (free lookup mode)'}"
+            )
+            print(
+                f"Public Key : {self.config.get('signing.public_key_path', '~/.fim/fim_ed25519.pub')}"
+            )
         input("\nPress Enter to return...")

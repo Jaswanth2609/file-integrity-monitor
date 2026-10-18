@@ -4,7 +4,7 @@ Handles minimum severity thresholds, cooldown de-duplication, and channel dispat
 """
 
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 from .channels import (
     ConsoleAlertChannel,
@@ -13,16 +13,19 @@ from .channels import (
     SlackAlertChannel,
     SyslogAlertChannel,
     TelegramAlertChannel,
-    WebhookAlertChannel
+    WebhookAlertChannel,
 )
 from ..config import ConfigManager
 from ..core.rules import Severity
 from ..storage.db import DatabaseManager
 
+
 class AlertManager:
     """Manages alert routing, filtering, and throttling."""
 
-    def __init__(self, config: Optional[ConfigManager] = None, db: Optional[DatabaseManager] = None):
+    def __init__(
+        self, config: Optional[ConfigManager] = None, db: Optional[DatabaseManager] = None
+    ):
         self.config = config or ConfigManager()
         self.db = db or DatabaseManager(self.config.db_path)
         self.min_sev = self.config.get("alerts.min_severity", "MEDIUM")
@@ -61,10 +64,12 @@ class AlertManager:
             self.channels["syslog"] = SyslogAlertChannel(
                 syslog_cfg.get("host", "127.0.0.1"),
                 int(syslog_cfg.get("port", 514)),
-                syslog_cfg.get("protocol", "udp")
+                syslog_cfg.get("protocol", "udp"),
             )
 
-    def dispatch(self, finding_data: Dict[str, Any], finding_id: Optional[int] = None) -> Dict[str, bool]:
+    def dispatch(
+        self, finding_data: Dict[str, Any], finding_id: Optional[int] = None
+    ) -> Dict[str, bool]:
         """Dispatches finding alert to all active channels respecting severity and cooldown."""
         sev_str = finding_data.get("severity", "INFO")
         if Severity.rank(sev_str) < Severity.rank(self.min_sev):

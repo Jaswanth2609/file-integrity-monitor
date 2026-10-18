@@ -23,7 +23,6 @@ if str(_src_dir) not in sys.path:
 if str(_repo_root) not in sys.path:
     sys.path.insert(0, str(_repo_root))
 
-from fim.alerts.manager import AlertManager
 from fim.api.server import FIMHttpHandler, resolve_api_token
 from fim.config import ConfigManager
 from fim.core.baseline import BaselineManager
@@ -32,16 +31,15 @@ from fim.core.hasher import HashEngine
 from fim.core.rules import ChangeType, RuleEngine, Severity
 from fim.crypto.anchor import ChainAnchorManager
 from fim.crypto.asymmetric import AsymmetricEngine
-from fim.crypto.entropy import calculate_shannon_entropy, validate_secret_entropy, load_secure_key_file
+from fim.crypto.entropy import validate_secret_entropy, load_secure_key_file
 from fim.errors import BaselineTamperedError, FileNotFoundError_
-from fim.intel.base import IntelReport, Verdict
-from fim.intel.ratelimit import TokenBucketRateLimiter, QuotaTracker
-from fim.intel.virustotal import VirusTotalClient
+from fim.intel.ratelimit import TokenBucketRateLimiter
 from fim.intel.yara_scanner import YaraEngine
-from fim.logging import setup_logger, JSONLogFormatter
+from fim.logging import JSONLogFormatter
 from fim.reports.generator import ReportGenerator
 from fim.storage.audit_chain import AuditChain
 from fim.storage.db import DatabaseManager
+
 
 class TestFIMv2(unittest.TestCase):
     def setUp(self):
@@ -68,7 +66,9 @@ class TestFIMv2(unittest.TestCase):
         empty_file = Path(self.test_dir) / "empty.txt"
         empty_file.write_bytes(b"")
         res = self.hasher.calculate_hashes(empty_file, ["sha256", "md5"])
-        self.assertEqual(res["sha256"], "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
+        self.assertEqual(
+            res["sha256"], "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        )
         self.assertEqual(res["md5"], "d41d8cd98f00b204e9800998ecf8427e")
 
     def test_tc002_known_content_hash(self):
@@ -119,7 +119,9 @@ class TestFIMv2(unittest.TestCase):
     def test_tc007_intel_caching(self):
         """TC-007 & TC-008: Intel report caching and retrieval."""
         test_hash = "b" * 64
-        self.db.cache_intel(test_hash, "VirusTotal", "MALICIOUS", 5, 70, {"tag": "trojan"}, ttl_seconds=3600)
+        self.db.cache_intel(
+            test_hash, "VirusTotal", "MALICIOUS", 5, 70, {"tag": "trojan"}, ttl_seconds=3600
+        )
         cached = self.db.get_cached_intel(test_hash, max_age_seconds=3600)
         self.assertIsNotNone(cached)
         self.assertEqual(cached["verdict"], "MALICIOUS")
@@ -135,7 +137,7 @@ class TestFIMv2(unittest.TestCase):
             "total_baseline_files": 1,
             "current_files_scanned": 1,
             "started_at": 1000.0,
-            "finished_at": 1001.0
+            "finished_at": 1001.0,
         }
         json_out = ReportGenerator.export_to_json(sample_data)
         self.assertIn("test-profile", json_out)
@@ -284,7 +286,7 @@ class TestFIMv2(unittest.TestCase):
             lineno=10,
             msg="Request to https://www.virustotal.com/api/v3/files?x_apikey=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
             args=(),
-            exc_info=None
+            exc_info=None,
         )
         formatted = formatter.format(record)
         self.assertNotIn("0123456789abcdef0123456789abcdef", formatted)
@@ -356,7 +358,10 @@ class TestFIMv2(unittest.TestCase):
         old_sig = b_mgr._calculate_hmac_signature(files_data, secret_key=old_secret)
         old_fp = b_mgr.calculate_key_fingerprint(old_secret)
         with self.db.get_connection() as conn:
-            conn.execute("UPDATE baselines SET signature = ?, key_fingerprint = ? WHERE name = 'legacy-profile'", (old_sig, old_fp))
+            conn.execute(
+                "UPDATE baselines SET signature = ?, key_fingerprint = ? WHERE name = 'legacy-profile'",
+                (old_sig, old_fp),
+            )
 
         # Normal load fails with BaselineTamperedError directing to migrate with old-key
         with self.assertRaises(BaselineTamperedError) as ctx:
@@ -390,7 +395,10 @@ class TestFIMv2(unittest.TestCase):
         old_sig = b_mgr._calculate_hmac_signature(files_data, secret_key=old_secret)
         old_fp = b_mgr.calculate_key_fingerprint(old_secret)
         with self.db.get_connection() as conn:
-            conn.execute("UPDATE baselines SET signature = ?, key_fingerprint = ? WHERE name = 'flag-profile'", (old_sig, old_fp))
+            conn.execute(
+                "UPDATE baselines SET signature = ?, key_fingerprint = ? WHERE name = 'flag-profile'",
+                (old_sig, old_fp),
+            )
 
         comp = IntegrityComparator(self.config, self.db)
         # Without old_key, check fails
@@ -420,7 +428,7 @@ class TestFIMv2(unittest.TestCase):
             name="asym-profile",
             paths=[asym_dir],
             signing_type="ed25519",
-            private_key_path=priv_key_file
+            private_key_path=priv_key_file,
         )
         self.assertTrue(manifest.signature.startswith("ed25519:"))
 
@@ -430,7 +438,9 @@ class TestFIMv2(unittest.TestCase):
 
         # Simulate root attacker modifying baseline DB content directly
         with self.db.get_connection() as conn:
-            conn.execute("UPDATE baseline_files SET hash = 'tampered_by_root' WHERE baseline_id = (SELECT id FROM baselines WHERE name = 'asym-profile')")
+            conn.execute(
+                "UPDATE baseline_files SET hash = 'tampered_by_root' WHERE baseline_id = (SELECT id FROM baselines WHERE name = 'asym-profile')"
+            )
 
         # Public key verification MUST fail and detect tampering
         with self.assertRaises(BaselineTamperedError):
@@ -452,7 +462,7 @@ class TestFIMv2(unittest.TestCase):
             sequence_id=3,
             chain_head_hash=head_hash,
             total_events=3,
-            secret_hmac_key="anchor-secret-test"
+            secret_hmac_key="anchor-secret-test",
         )
         anchor_file = Path(self.test_dir) / "chain_anchor.json"
         ChainAnchorManager.export_anchor_file(anchor, anchor_file)
@@ -462,7 +472,7 @@ class TestFIMv2(unittest.TestCase):
             anchor_data=anchor,
             current_head_hash=head_hash,
             current_sequence_id=3,
-            secret_hmac_key="anchor-secret-test"
+            secret_hmac_key="anchor-secret-test",
         )
         self.assertTrue(ok)
 
@@ -471,7 +481,7 @@ class TestFIMv2(unittest.TestCase):
             anchor_data=anchor,
             current_head_hash="forged_new_head_hash_value",
             current_sequence_id=3,
-            secret_hmac_key="anchor-secret-test"
+            secret_hmac_key="anchor-secret-test",
         )
         self.assertFalse(ok_tampered)
         self.assertIn("AUDIT INTEGRITY VIOLATION", tampered_msg)
@@ -491,7 +501,9 @@ class TestFIMv2(unittest.TestCase):
 
     def test_tc031_key_entropy_validation(self):
         """TC-031: Entropy validator rejects weak/repetitive keys and accepts high-entropy secrets."""
-        ok_weak, _ = validate_secret_entropy("aaaaaaaaaaaaaaaaaaaaaaaa", min_length=16, min_entropy=2.5)
+        ok_weak, _ = validate_secret_entropy(
+            "aaaaaaaaaaaaaaaaaaaaaaaa", min_length=16, min_entropy=2.5
+        )
         self.assertFalse(ok_weak)
 
         ok_short, _ = validate_secret_entropy("short", min_length=16, min_entropy=2.5)
@@ -504,6 +516,7 @@ class TestFIMv2(unittest.TestCase):
     def test_tc032_non_loopback_bind_refusal(self):
         """TC-032: run_server refuses non-loopback bind address without explicit allow_remote flag."""
         from fim.api.server import run_server
+
         with self.assertRaises(PermissionError) as ctx:
             run_server(host="0.0.0.0", port=9999, config=self.config, allow_remote=False)
         self.assertIn("SECURITY REFUSAL", str(ctx.exception))
@@ -512,7 +525,9 @@ class TestFIMv2(unittest.TestCase):
         """TC-033: .fimignore file in monitored directory excludes specified file patterns."""
         ignore_dir = Path(self.test_dir) / "ignore_dir"
         ignore_dir.mkdir()
-        (ignore_dir / ".fimignore").write_text("*.ignore_me\nignored_folder/*\n# comment\n", encoding="utf-8")
+        (ignore_dir / ".fimignore").write_text(
+            "*.ignore_me\nignored_folder/*\n# comment\n", encoding="utf-8"
+        )
         (ignore_dir / "keep.txt").write_text("keep", encoding="utf-8")
         (ignore_dir / "skip.ignore_me").write_text("skip", encoding="utf-8")
 
@@ -539,10 +554,11 @@ class TestFIMv2(unittest.TestCase):
 
     def test_tc036_cors_origin_allowlist(self):
         """TC-036: FIMHttpHandler enforces strict CORS origin allowlist."""
+
         class MockHandler:
             headers = {"Origin": "http://localhost:8000"}
             config = self.config
-        
+
         MockHandler._get_cors_origin = FIMHttpHandler._get_cors_origin
         self.assertEqual(MockHandler._get_cors_origin(MockHandler), "http://localhost:8000")
 
@@ -551,6 +567,7 @@ class TestFIMv2(unittest.TestCase):
 
     def test_tc037_header_only_token_auth(self):
         """TC-037: _check_auth rejects URL query tokens and accepts Bearer/X-API-Key headers."""
+
         class MockHandler:
             api_token = "valid-token-1234567890123456789012"
             headers = {}
@@ -578,7 +595,7 @@ class TestFIMv2(unittest.TestCase):
     def test_tc039_audit_separation_and_auto_anchoring(self):
         """TC-039: AuditChain writes to dedicated audit.db, chain_anchor, and audit.jsonl."""
         self.db.audit.append_event("TEST_EVENT", {"detail": "audit test"})
-        
+
         self.assertTrue(self.audit_db_path.exists())
         anchor_file = self.audit_db_path.parent / "chain_anchor"
         self.assertTrue(anchor_file.exists())
@@ -592,6 +609,7 @@ class TestFIMv2(unittest.TestCase):
     def test_tc040_live_monitor_verifies_baseline_and_alerts_on_tamper(self):
         """TC-040: LiveMonitor verifies baseline signature on change events and dispatches alert on tamper."""
         from fim.core.monitor import LiveMonitor
+
         test_file = Path(self.test_dir) / "monitored.txt"
         test_file.write_text("initial content", encoding="utf-8")
 
@@ -603,7 +621,7 @@ class TestFIMv2(unittest.TestCase):
             profile_name="test_mon",
             config=self.config,
             db=self.db,
-            alert_callback=lambda f: alerts.append(f)
+            alert_callback=lambda f: alerts.append(f),
         )
         # Verified baseline loaded
         baseline = monitor._get_verified_baseline()
@@ -617,7 +635,9 @@ class TestFIMv2(unittest.TestCase):
 
         # Now simulate attacker tampering with the database baseline signature
         with self.db.get_connection() as conn:
-            conn.execute("UPDATE baselines SET signature = 'forged_signature_0000' WHERE name = 'test_mon'")
+            conn.execute(
+                "UPDATE baselines SET signature = 'forged_signature_0000' WHERE name = 'test_mon'"
+            )
         # Update db mtime to trigger cache invalidation
         os.utime(self.db_path, (time.time() + 10, time.time() + 10))
 
@@ -634,7 +654,6 @@ class TestFIMv2(unittest.TestCase):
 
     def test_tc041_external_anchor_and_forged_append_verification(self):
         """TC-041: AuditChain validates anchored index so forged appends after anchor fail, and exports externally."""
-        from fim.storage.audit_chain import AuditChain
         ext_anchor = Path(self.test_dir) / "external_worm" / "chain_anchor"
         chain_db = Path(self.test_dir) / "test_chain.db"
         chain = AuditChain(conn_or_path=chain_db, external_anchor_path=ext_anchor)
@@ -661,7 +680,9 @@ class TestFIMv2(unittest.TestCase):
         with chain.conn:
             cursor = chain.conn.cursor()
             # Modify record 2
-            cursor.execute("UPDATE audit_log SET details_json = '{\"detail\": \"attacker altered\"}' WHERE id = 2")
+            cursor.execute(
+                'UPDATE audit_log SET details_json = \'{"detail": "attacker altered"}\' WHERE id = 2'
+            )
             # Recompute record 2 entry_hash
             cursor.execute("SELECT ts, event, details_json, prev_hash FROM audit_log WHERE id = 2")
             row2 = cursor.fetchone()
@@ -674,13 +695,15 @@ class TestFIMv2(unittest.TestCase):
             new_hash_3 = chain.calculate_entry_hash(ts3, "FORGED", details3, new_hash_2)
             cursor.execute(
                 "INSERT INTO audit_log (ts, event, details_json, prev_hash, entry_hash) VALUES (?, ?, ?, ?, ?)",
-                (ts3, "FORGED", details3, new_hash_2, new_hash_3)
+                (ts3, "FORGED", details3, new_hash_2, new_hash_3),
             )
 
         # Restore external anchor to the genuine anchor at count=2
         if os.name != "nt":
             os.chmod(ext_anchor, stat.S_IRUSR | stat.S_IWUSR)
-        ext_anchor.write_text(json.dumps({"count": 2, "head": saved_anchor_head, "ts": time.time()}))
+        ext_anchor.write_text(
+            json.dumps({"count": 2, "head": saved_anchor_head, "ts": time.time()})
+        )
         if os.name != "nt":
             os.chmod(ext_anchor, stat.S_IRUSR)
 
@@ -700,7 +723,7 @@ class TestFIMv2(unittest.TestCase):
     def test_tc042_audit_chain_concurrent_writers_no_race(self):
         """TC-042: Concurrent writers to AuditChain append in immediate transactions without chain forks."""
         import threading
-        from fim.storage.audit_chain import AuditChain
+
         race_db = Path(self.test_dir) / "race_test.db"
         chain = AuditChain(conn_or_path=race_db)
 
@@ -709,7 +732,9 @@ class TestFIMv2(unittest.TestCase):
 
         def writer(thread_id: int):
             for i in range(events_per_thread):
-                chain.append_event(f"THREAD_{thread_id}_EVENT_{i}", {"thread": thread_id, "iter": i})
+                chain.append_event(
+                    f"THREAD_{thread_id}_EVENT_{i}", {"thread": thread_id, "iter": i}
+                )
 
         threads = [threading.Thread(target=writer, args=(t,)) for t in range(num_threads)]
         for t in threads:
@@ -793,6 +818,7 @@ class TestFIMv2(unittest.TestCase):
     def test_tc045_resolve_api_token_fails_hard_on_write_error(self):
         """TC-045: resolve_api_token raises RuntimeError with explanation if token cannot be persisted."""
         from unittest.mock import patch
+
         cfg = ConfigManager()
         cfg.set("api.bearer_token", "")
         cfg.set("database.path", str(Path(self.test_dir) / "no_token_dir" / "test.db"))
@@ -805,4 +831,3 @@ class TestFIMv2(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

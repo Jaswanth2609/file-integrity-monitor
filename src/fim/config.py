@@ -8,10 +8,11 @@ import json
 import secrets
 import stat
 from pathlib import Path
-from typing import Any, Dict, Optional, List
+from typing import Any, Dict, Optional
 
 try:
     import yaml
+
     HAVE_YAML = True
 except ImportError:
     HAVE_YAML = False
@@ -26,19 +27,19 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "log_level": "INFO",
         "log_file": "~/.fim/fim.log",
         "log_json": False,
-        "auto_secure_permissions": True
+        "auto_secure_permissions": True,
     },
     "signing": {
         "type": "hmac",  # "hmac" or "ed25519"
         "private_key_path": "~/.fim/fim_ed25519",
-        "public_key_path": "~/.fim/fim_ed25519.pub"
+        "public_key_path": "~/.fim/fim_ed25519.pub",
     },
     "hashing": {
         "default_algorithm": "sha256",
         "chunk_size_kb": 64,
         "max_workers": 4,
         "allow_legacy_algorithms": True,
-        "follow_symlinks": False
+        "follow_symlinks": False,
     },
     "baseline": {
         "default_profile": "default",
@@ -51,15 +52,15 @@ DEFAULT_CONFIG: Dict[str, Any] = {
             ".git/*",
             ".DS_Store",
             "Thumbs.db",
-            "~/.fim/*"
+            "~/.fim/*",
         ],
-        "include_patterns": ["*"]
+        "include_patterns": ["*"],
     },
     "monitor": {
         "debounce_seconds": 2.0,
         "poll_interval_seconds": 5.0,
         "scheduled_check_interval_seconds": 3600,
-        "auto_reverify": True
+        "auto_reverify": True,
     },
     "virustotal": {
         "api_key": "",
@@ -68,17 +69,10 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "max_retries": 3,
         "cache_ttl_hours": 24,
         "max_daily_requests": 500,
-        "allow_file_upload": False
+        "allow_file_upload": False,
     },
-    "malwarebazaar": {
-        "enabled": True,
-        "timeout_seconds": 10,
-        "api_key": ""
-    },
-    "yara": {
-        "enabled": True,
-        "rules_dir": "~/.fim/rules"
-    },
+    "malwarebazaar": {"enabled": True, "timeout_seconds": 10, "api_key": ""},
+    "yara": {"enabled": True, "rules_dir": "~/.fim/rules"},
     "alerts": {
         "min_severity": "MEDIUM",
         "cooldown_seconds": 60,
@@ -93,52 +87,28 @@ DEFAULT_CONFIG: Dict[str, Any] = {
                 "sender": "",
                 "recipient": "",
                 "username": "",
-                "password": ""
+                "password": "",
             },
-            "slack": {
-                "enabled": False,
-                "webhook_url": ""
-            },
-            "telegram": {
-                "enabled": False,
-                "bot_token": "",
-                "chat_id": ""
-            },
-            "webhook": {
-                "enabled": False,
-                "url": "",
-                "headers": {}
-            },
-            "syslog": {
-                "enabled": False,
-                "host": "127.0.0.1",
-                "port": 514,
-                "protocol": "udp"
-            }
-        }
+            "slack": {"enabled": False, "webhook_url": ""},
+            "telegram": {"enabled": False, "bot_token": "", "chat_id": ""},
+            "webhook": {"enabled": False, "url": "", "headers": {}},
+            "syslog": {"enabled": False, "host": "127.0.0.1", "port": 514, "protocol": "udp"},
+        },
     },
     "database": {
         "path": "~/.fim/fim_database.db",
         "cache_ttl_hours": 24,
         "max_history_records": 5000,
-        "audit_chain_enabled": True
+        "audit_chain_enabled": True,
     },
-    "api": {
-        "host": "127.0.0.1",
-        "port": 8000,
-        "bearer_token": "",
-        "cors_origins": ["*"]
-    },
-    "ui": {
-        "colored_output": True,
-        "theme": "dark",
-        "progress_bar_threshold_mb": 10
-    }
+    "api": {"host": "127.0.0.1", "port": 8000, "bearer_token": "", "cors_origins": ["*"]},
+    "ui": {"colored_output": True, "theme": "dark", "progress_bar_threshold_mb": 10},
 }
+
 
 class ConfigManager:
     """Manages application configuration, hierarchy, and secrets."""
-    
+
     def __init__(self, config_path: Optional[str] = None):
         self.config_path = self._resolve_config_path(config_path)
         self.data: Dict[str, Any] = self._deep_copy(DEFAULT_CONFIG)
@@ -150,7 +120,7 @@ class ConfigManager:
     def _resolve_config_path(self, custom_path: Optional[str]) -> Path:
         if custom_path:
             return Path(custom_path).expanduser().resolve()
-        
+
         env_path = os.getenv("FIM_CONFIG")
         if env_path:
             return Path(env_path).expanduser().resolve()
@@ -159,7 +129,7 @@ class ConfigManager:
         local_dir = Path(__file__).resolve().parent.parent.parent / "config" / "config.yaml"
         if local_dir.exists():
             return local_dir
-            
+
         return Path("~/.fim/config.yaml").expanduser().resolve()
 
     def load(self) -> Dict[str, Any]:
@@ -191,7 +161,7 @@ class ConfigManager:
             line = line.strip()
             if not line or line.startswith("#"):
                 continue
-            if line.endswith(":") and not ":" in line[:-1]:
+            if line.endswith(":") and ":" not in line[:-1]:
                 curr_section = line[:-1].strip()
                 res[curr_section] = {}
             elif ":" in line:
@@ -223,7 +193,11 @@ class ConfigManager:
     def _apply_env_overrides(self) -> None:
         """Injects environment variables for sensitive settings."""
         # VirusTotal API Key
-        vt_key = os.getenv("VT_API_KEY") or os.getenv("VIRUSTOTAL_API_KEY") or os.getenv("FIM_VIRUSTOTAL_API_KEY")
+        vt_key = (
+            os.getenv("VT_API_KEY")
+            or os.getenv("VIRUSTOTAL_API_KEY")
+            or os.getenv("FIM_VIRUSTOTAL_API_KEY")
+        )
         if vt_key:
             self.data["virustotal"]["api_key"] = vt_key.strip()
 
@@ -275,7 +249,9 @@ class ConfigManager:
             pass
 
     def _ensure_secure_permissions(self) -> None:
-        if self.config_path.exists() and self.data.get("app", {}).get("auto_secure_permissions", True):
+        if self.config_path.exists() and self.data.get("app", {}).get(
+            "auto_secure_permissions", True
+        ):
             self._set_file_0600(self.config_path)
 
     def get(self, key_path: str, default: Any = None) -> Any:

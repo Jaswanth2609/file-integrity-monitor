@@ -6,18 +6,19 @@ Supports loading user-editable detection and severity rules from config/rules.ya
 import fnmatch
 import json
 import logging
-import os
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 logger = logging.getLogger("fim.rules")
 
 try:
     import yaml
+
     HAVE_YAML = True
 except ImportError:
     HAVE_YAML = False
+
 
 class ChangeType(str, Enum):
     ADDED = "ADDED"
@@ -26,6 +27,7 @@ class ChangeType(str, Enum):
     PERMISSION_CHANGED = "PERMISSION_CHANGED"
     OWNER_CHANGED = "OWNER_CHANGED"
     RENAMED = "RENAMED"
+
 
 class Severity(str, Enum):
     INFO = "INFO"
@@ -36,14 +38,9 @@ class Severity(str, Enum):
 
     @classmethod
     def rank(cls, sev: str) -> int:
-        mapping = {
-            "INFO": 1,
-            "LOW": 2,
-            "MEDIUM": 3,
-            "HIGH": 4,
-            "CRITICAL": 5
-        }
+        mapping = {"INFO": 1, "LOW": 2, "MEDIUM": 3, "HIGH": 4, "CRITICAL": 5}
         return mapping.get(str(sev).upper(), 1)
+
 
 # MITRE ATT&CK Technique Definitions
 MITRE_ATTACK_MAP = {
@@ -60,25 +57,44 @@ MITRE_ATTACK_MAP = {
     "T1222": "File and Directory Permissions Modification",
     "T1083": "File and Directory Discovery",
     "T1027": "Obfuscated/Compressed Files and Information",
-    "T1496": "Resource Hijacking (Crypto Mining)"
+    "T1496": "Resource Hijacking (Crypto Mining)",
 }
 
 DEFAULT_CRITICAL_SYSTEM_PATHS = [
-    "/etc", "/bin", "/sbin", "/usr/bin", "/usr/sbin", "/lib", "/lib64", "/boot",
-    "/usr/local/bin", "/usr/local/sbin", "C:\\Windows\\System32", "C:\\Windows\\SysWOW64"
+    "/etc",
+    "/bin",
+    "/sbin",
+    "/usr/bin",
+    "/usr/sbin",
+    "/lib",
+    "/lib64",
+    "/boot",
+    "/usr/local/bin",
+    "/usr/local/sbin",
+    "C:\\Windows\\System32",
+    "C:\\Windows\\SysWOW64",
 ]
 
 DEFAULT_EXECUTABLE_EXTENSIONS = [
-    ".exe", ".dll", ".so", ".bin", ".sh", ".bash", ".py", ".ps1", ".vbs", ".bat", ".cmd", ".elf", ".js"
+    ".exe",
+    ".dll",
+    ".so",
+    ".bin",
+    ".sh",
+    ".bash",
+    ".py",
+    ".ps1",
+    ".vbs",
+    ".bat",
+    ".cmd",
+    ".elf",
+    ".js",
 ]
 
-DEFAULT_WEB_EXTENSIONS = [
-    ".php", ".jsp", ".asp", ".aspx", ".html", ".phtml", ".cgi"
-]
+DEFAULT_WEB_EXTENSIONS = [".php", ".jsp", ".asp", ".aspx", ".html", ".phtml", ".cgi"]
 
-DEFAULT_CONFIG_EXTENSIONS = [
-    ".conf", ".cfg", ".yaml", ".yml", ".json", ".ini", ".env", ".toml"
-]
+DEFAULT_CONFIG_EXTENSIONS = [".conf", ".cfg", ".yaml", ".yml", ".json", ".ini", ".env", ".toml"]
+
 
 class RuleEngine:
     """Evaluates file changes against configurable user-editable detection rules and severity mappings."""
@@ -106,7 +122,7 @@ class RuleEngine:
         candidates = [
             Path(__file__).resolve().parent.parent.parent.parent / "config" / "rules.yaml",
             Path("~/.fim/rules.yaml").expanduser().resolve(),
-            Path("config/rules.yaml").resolve()
+            Path("config/rules.yaml").resolve(),
         ]
         for c in candidates:
             if c.exists():
@@ -142,7 +158,7 @@ class RuleEngine:
         path_str: str,
         change_type: ChangeType,
         mode_diff: Optional[str] = None,
-        is_executable: bool = False
+        is_executable: bool = False,
     ) -> Tuple[Severity, Optional[str], str]:
         """
         Classifies a detected change into Severity, MITRE ID, and a descriptive reason.
@@ -160,10 +176,16 @@ class RuleEngine:
             patterns = crule.get("path_pattern", "").split("|")
             for pat in patterns:
                 pat = pat.strip()
-                if pat and (fnmatch.fnmatch(path_str, pat) or fnmatch.fnmatch(path_lower, pat.lower())):
+                if pat and (
+                    fnmatch.fnmatch(path_str, pat) or fnmatch.fnmatch(path_lower, pat.lower())
+                ):
                     sev_str = crule.get("severity", "HIGH").upper()
                     sev = Severity(sev_str) if sev_str in Severity.__members__ else Severity.HIGH
-                    return sev, crule.get("attack_id", "T1565"), crule.get("description", f"Matched custom rule: {crule.get('name')}")
+                    return (
+                        sev,
+                        crule.get("attack_id", "T1565"),
+                        crule.get("description", f"Matched custom rule: {crule.get('name')}"),
+                    )
 
         # 2. Check if in a critical system directory
         in_critical_sys = any(
@@ -173,16 +195,28 @@ class RuleEngine:
 
         if change_type == ChangeType.MODIFIED:
             if in_critical_sys or ext in self.executable_extensions:
-                return Severity.CRITICAL, "T1565", f"Executable or critical system file modified: {p.name}"
+                return (
+                    Severity.CRITICAL,
+                    "T1565",
+                    f"Executable or critical system file modified: {p.name}",
+                )
             if ext in self.web_extensions:
-                return Severity.HIGH, "T1505", f"Web application component modified (possible web shell): {p.name}"
+                return (
+                    Severity.HIGH,
+                    "T1505",
+                    f"Web application component modified (possible web shell): {p.name}",
+                )
             if ext in self.config_extensions:
                 return Severity.MEDIUM, "T1565", f"Configuration file modified: {p.name}"
             return Severity.LOW, "T1565", f"Regular file content modified: {p.name}"
 
         elif change_type == ChangeType.ADDED:
             if in_critical_sys or ext in self.executable_extensions:
-                return Severity.HIGH, "T1059", f"New executable or script added in monitored scope: {p.name}"
+                return (
+                    Severity.HIGH,
+                    "T1059",
+                    f"New executable or script added in monitored scope: {p.name}",
+                )
             if ext in self.web_extensions:
                 return Severity.HIGH, "T1505", f"New web script added: {p.name}"
             return Severity.INFO, "T1083", f"New file created: {p.name}"
