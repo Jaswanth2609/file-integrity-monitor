@@ -623,6 +623,71 @@ class TestFIMv2(unittest.TestCase):
         self.assertEqual(tamper_alert["severity"], "CRITICAL")
         self.assertEqual(tamper_alert["attack_id"], "T1565.001")
 
+    def test_tc041_external_anchor_and_forged_append_verification(self):
+        """TC-041: AuditChain validates anchored index so forged appends after anchor fail, and exports externally."""
+        from src.fim.storage.audit_chain import AuditChain
+        ext_anchor = Path(self.test_dir) / "external_worm" / "chain_anchor"
+        chain_db = Path(self.test_dir) / "test_chain.db"
+        chain = AuditChain(conn_or_path=chain_db, external_anchor_path=ext_anchor)
+
+        # 1. Append initial legitimate events
+        chain.append_event("BOOT", {"detail": "legit boot"})
+        chain.append_event("SCAN", {"detail": "initial scan"})
+
+        # External anchor should be auto-written
+        self.assertTrue(ext_anchor.exists())
+        anchor_data = json.loads(ext_anchor.read_text(encoding="utf-8"))
+        self.assertEqual(anchor_data["count"], 2)
+
+        # Verification passes on untampered log
+        valid, msg, count = chain.verify_integrity()
+        self.assertTrue(valid)
+        self.assertEqual(count, 2)
+
+        # Save the valid anchor at count=2
+        saved_anchor_head = anchor_data["head"]
+
+        # 2. Simulate attacker tampering with history (modifying record 2) and appending forged record 3
+        # In a naive check where count != anchor_count skips head check, this would have passed!
+        with chain.conn:
+            cursor = chain.conn.cursor()
+            # Modify record 2
+            cursor.execute("UPDATE audit_log SET details_json = '{\"detail\": \"attacker altered\"}' WHERE id = 2")
+            # Recompute record 2 entry_hash
+            cursor.execute("SELECT ts, event, details_json, prev_hash FROM audit_log WHERE id = 2")
+            row2 = cursor.fetchone()
+            new_hash_2 = chain.calculate_entry_hash(row2[0], row2[1], row2[2], row2[3])
+            cursor.execute("UPDATE audit_log SET entry_hash = ? WHERE id = 2", (new_hash_2,))
+
+            # Append forged record 3 chained to new_hash_2
+            ts3 = time.time()
+            details3 = '{"detail": "forged append"}'
+            new_hash_3 = chain.calculate_entry_hash(ts3, "FORGED", details3, new_hash_2)
+            cursor.execute(
+                "INSERT INTO audit_log (ts, event, details_json, prev_hash, entry_hash) VALUES (?, ?, ?, ?, ?)",
+                (ts3, "FORGED", details3, new_hash_2, new_hash_3)
+            )
+
+        # Restore external anchor to the genuine anchor at count=2
+        if os.name != "nt":
+            os.chmod(ext_anchor, stat.S_IRUSR | stat.S_IWUSR)
+        ext_anchor.write_text(json.dumps({"count": 2, "head": saved_anchor_head, "ts": time.time()}))
+        if os.name != "nt":
+            os.chmod(ext_anchor, stat.S_IRUSR)
+
+        # Database now has 3 records. len(rows) > anchored_count (3 > 2).
+        # verify_integrity MUST inspect record at index 2 and reject!
+        valid, msg, count = chain.verify_integrity()
+        self.assertFalse(valid)
+        self.assertIn("AUDIT INTEGRITY VIOLATION", str(msg))
+
+        # 3. Test explicit export_chain_anchor
+        export_dest = Path(self.test_dir) / "manual_worm_export.json"
+        exported = chain.export_chain_anchor(export_dest)
+        self.assertTrue(exported.exists())
+        exported_data = json.loads(exported.read_text(encoding="utf-8"))
+        self.assertEqual(exported_data["count"], 3)
+
 
 if __name__ == "__main__":
     unittest.main()

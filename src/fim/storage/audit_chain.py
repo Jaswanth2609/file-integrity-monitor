@@ -31,7 +31,8 @@ class AuditChain:
         self,
         conn_or_path: Optional[Union[sqlite3.Connection, str, Path]] = None,
         anchor_path: Optional[Union[str, Path]] = None,
-        jsonl_path: Optional[Union[str, Path]] = None
+        jsonl_path: Optional[Union[str, Path]] = None,
+        external_anchor_path: Optional[Union[str, Path]] = None,
     ):
         self._owned_conn = False
         self._lock_file = None
@@ -49,6 +50,10 @@ class AuditChain:
 
         self.anchor_path = Path(anchor_path or (self.db_path.parent if self.db_path else Path("~/.fim").expanduser()) / "chain_anchor").resolve()
         self.jsonl_path = Path(jsonl_path or (self.db_path.parent if self.db_path else Path("~/.fim").expanduser()) / "audit.jsonl").resolve()
+
+        ext_env = os.environ.get("FIM_EXTERNAL_ANCHOR_PATH")
+        ext_target = external_anchor_path or (ext_env if ext_env else None)
+        self.external_anchor_path = Path(ext_target).resolve() if ext_target else None
 
         self._init_table()
         self._set_secure_permissions()
@@ -125,26 +130,49 @@ class AuditChain:
 
         return entry_id
 
-    def _write_chain_anchor(self, head_hash: str, total_count: int, ts: float) -> None:
+    def _write_anchor_file(self, target_path: Path, payload_bytes: bytes) -> None:
         try:
-            self.anchor_path.parent.mkdir(parents=True, exist_ok=True)
-            if os.name != "nt" and self.anchor_path.exists():
+            target_path.parent.mkdir(parents=True, exist_ok=True)
+            if os.name != "nt" and target_path.exists():
                 try:
-                    os.chmod(self.anchor_path, stat.S_IRUSR | stat.S_IWUSR)
+                    os.chmod(target_path, stat.S_IRUSR | stat.S_IWUSR)
                 except Exception:
                     pass
-
-            anchor_payload = {
-                "head": head_hash,
-                "count": total_count,
-                "ts": ts
-            }
-            self.anchor_path.write_text(json.dumps(anchor_payload, indent=2), encoding="utf-8")
-
+            tmp_path = target_path.with_suffix(".tmp")
+            with open(tmp_path, "wb") as f:
+                f.write(payload_bytes)
+                f.flush()
+                os.fsync(f.fileno())
+            tmp_path.replace(target_path)
             if os.name != "nt":
-                os.chmod(self.anchor_path, stat.S_IRUSR)  # chmod 0400 read-only
+                os.chmod(target_path, stat.S_IRUSR)  # chmod 0400 read-only
         except Exception as e:
-            logger.debug(f"Could not update local chain anchor file: {e}")
+            logger.debug(f"Could not write chain anchor to {target_path}: {e}")
+
+    def _write_chain_anchor(self, head_hash: str, total_count: int, ts: float) -> None:
+        anchor_payload = {
+            "head": head_hash,
+            "count": total_count,
+            "ts": ts
+        }
+        payload_bytes = json.dumps(anchor_payload, indent=2).encode("utf-8")
+        self._write_anchor_file(self.anchor_path, payload_bytes)
+        if self.external_anchor_path:
+            self._write_anchor_file(self.external_anchor_path, payload_bytes)
+
+    def export_chain_anchor(self, destination: Union[str, Path]) -> Path:
+        """Exports the latest audit chain anchor to external/WORM media destination."""
+        dest_path = Path(destination).resolve()
+        latest_hash = self.get_latest_hash()
+        total_count = self.get_total_count()
+        payload = {
+            "head": latest_hash,
+            "count": total_count,
+            "ts": time.time()
+        }
+        payload_bytes = json.dumps(payload, indent=2).encode("utf-8")
+        self._write_anchor_file(dest_path, payload_bytes)
+        return dest_path
 
     def _append_jsonl(self, entry_id: int, ts: float, event: str, details: Dict[str, Any], entry_hash: str, prev_hash: str) -> None:
         try:
@@ -164,9 +192,10 @@ class AuditChain:
         except Exception as e:
             logger.debug(f"Could not append to JSONL audit stream: {e}")
 
-    def verify_integrity(self) -> Tuple[bool, Optional[str], int]:
+    def verify_integrity(self, external_anchor_path: Optional[Union[str, Path]] = None) -> Tuple[bool, Optional[str], int]:
         """
-        Verifies the full cryptographic hash chain of the audit log and checks against local chain anchor.
+        Verifies the full cryptographic hash chain of the audit log and validates against anchors.
+        Checks the record at the exact anchored index so forged records appended after anchor fail.
         Returns (is_valid, error_message, total_records_checked).
         """
         cursor = self.conn.cursor()
@@ -188,21 +217,32 @@ class AuditChain:
 
             expected_prev = entry_hash
 
-        # Verify against local chain anchor if present
+        # Verify against anchors (both external and local if present)
+        anchors_to_check = []
+        if external_anchor_path:
+            anchors_to_check.append(("External anchor", Path(external_anchor_path).resolve()))
+        elif self.external_anchor_path and self.external_anchor_path.exists():
+            anchors_to_check.append(("External anchor", self.external_anchor_path))
+
         if self.anchor_path.exists():
+            anchors_to_check.append(("Local anchor", self.anchor_path))
+
+        for label, a_path in anchors_to_check:
             try:
-                anchor_data = json.loads(self.anchor_path.read_text(encoding="utf-8"))
+                anchor_data = json.loads(a_path.read_text(encoding="utf-8"))
                 anchored_count = anchor_data.get("count", 0)
                 anchored_head = anchor_data.get("head", "")
 
-                if len(rows) < anchored_count:
-                    return False, f"Audit log has {len(rows)} records but anchor recorded {anchored_count} — possible truncation or record deletion!", len(rows)
+                if anchored_count > 0:
+                    if len(rows) < anchored_count:
+                        return False, f"{label} recorded {anchored_count} entries, but audit log has {len(rows)} — possible truncation or record deletion!", len(rows)
 
-                latest_head = rows[-1]["entry_hash"] if isinstance(rows[-1], sqlite3.Row) else rows[-1][5]
-                if anchored_head and latest_head != anchored_head and len(rows) == anchored_count:
-                    return False, f"AUDIT INTEGRITY VIOLATION: Local chain head ({latest_head[:16]}...) does not match anchor head ({anchored_head[:16]}...)!", len(rows)
+                    anchored_row = rows[anchored_count - 1]
+                    anchored_entry_hash = anchored_row["entry_hash"] if isinstance(anchored_row, sqlite3.Row) else anchored_row[5]
+                    if anchored_head and anchored_entry_hash != anchored_head:
+                        return False, f"AUDIT INTEGRITY VIOLATION: Record at anchored index {anchored_count} ({anchored_entry_hash[:16]}...) does not match {label.lower()} head ({anchored_head[:16]}...)!", len(rows)
             except Exception as e:
-                logger.debug(f"Could not verify against local chain anchor: {e}")
+                logger.debug(f"Could not verify against {label} at {a_path}: {e}")
 
         return True, None, len(rows)
 

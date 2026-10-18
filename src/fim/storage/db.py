@@ -25,7 +25,8 @@ class DatabaseManager:
     def __init__(
         self,
         db_path: Optional[Union[str, Path]] = None,
-        audit_db_path: Optional[Union[str, Path]] = None
+        audit_db_path: Optional[Union[str, Path]] = None,
+        external_anchor_path: Optional[Union[str, Path]] = None,
     ):
         if db_path:
             self.db_path = Path(db_path).expanduser().resolve()
@@ -36,6 +37,8 @@ class DatabaseManager:
             self.audit_db_path = Path(audit_db_path).expanduser().resolve()
         else:
             self.audit_db_path = self.db_path.parent / "audit.db"
+
+        self.external_anchor_path = Path(external_anchor_path).resolve() if external_anchor_path else None
 
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self.audit_db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -215,7 +218,10 @@ class DatabaseManager:
     @property
     def audit(self) -> AuditChain:
         """Returns dedicated AuditChain instance tied to audit.db."""
-        return AuditChain(conn_or_path=self.audit_db_path)
+        return AuditChain(
+            conn_or_path=self.audit_db_path,
+            external_anchor_path=getattr(self, "external_anchor_path", None)
+        )
 
     # ------------------ Key Registry Operations ------------------
 

@@ -85,7 +85,8 @@ def create_parser() -> argparse.ArgumentParser:
     audit_parser = subparsers.add_parser("audit", help="Inspect and verify append-only cryptographic audit ledger")
     audit_sub = audit_parser.add_subparsers(dest="audit_action")
     
-    audit_sub.add_parser("verify", help="Verify local hash-chained audit ledger integrity")
+    p_audit_ver = audit_sub.add_parser("verify", help="Verify local hash-chained audit ledger integrity")
+    p_audit_ver.add_argument("--anchor", "-a", help="Optional path to external anchor file to verify against")
     audit_sub.add_parser("list", help="List recent audit log entries")
 
     p_anchor_exp = audit_sub.add_parser("anchor-export", help="Export and sign current audit chain head anchor")
@@ -308,7 +309,8 @@ def main_cli(args_list: Optional[List[str]] = None) -> int:
     elif cmd == "audit":
         action = args.audit_action
         if action == "verify" or action is None:
-            valid, msg, count = db.audit.verify_integrity()
+            anchor_file = getattr(args, "anchor", None)
+            valid, msg, count = db.audit.verify_integrity(external_anchor_path=anchor_file)
             col = Colors.GREEN if valid else Colors.RED
             print(f"\n{col}Audit Chain Integrity: {'VERIFIED' if valid else 'TAMPERED'}{Colors.RESET}")
             print(f"Total Events Checked : {count}")
