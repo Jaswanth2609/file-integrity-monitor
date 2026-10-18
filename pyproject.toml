@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "file-integrity-monitor"
-version = "2.2.0"
+version = "2.3.0"
 description = "File Integrity Monitor (FIM) with baseline signing, audit chaining, and real-time monitoring"
 readme = "README.md"
 license = { text = "MIT" }

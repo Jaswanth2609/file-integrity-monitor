@@ -6,6 +6,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.3.0] - 2026-10-18
+
+### Added
+- **Public-Key Live Verification (`fim watch --public-key`)**: Real-time monitoring daemon validates baseline integrity on change events against Ed25519 public keys and caches mtimes to detect live baseline tampering.
+- **External Anchor Verification (`fim audit verify --anchor`)**: Validates the SHA-256 audit ledger against external anchor files with record count bounds checking.
+- **Atomic Audit Transactions**: Concurrency-safe audit event appending via `BEGIN IMMEDIATE` SQLite transactions and threading locks.
+- **Canonical `fim` Entry Point & Packaging Layout**: Standardized on PEP 517/621 `src` layout with `fim = "fim.cli.commands:main_cli"`.
+- **API Hardening**: Added 10MB payload size limits on POST endpoints and constant-time `secrets.compare_digest` token validation.
+
+### Changed
+- **Codebase & Dependency Minimization**: Removed unused web framework dependencies (`fastapi`, `uvicorn`, `pydantic`) and dead code (`yara_scan.py`, `schemas.py`).
+- **Technical Documentation**: Rewrote `README.md` with factual security specifications, realistic threat boundaries, and integrated contribution guidelines.
+
+---
+
 ## [2.2.0] - 2026-10-09
 
 ### Security Hardening & Storage Architecture (Top 6 Fixes)

@@ -239,11 +239,11 @@ sudo systemctl enable --now fim-scan.timer
 
 Build and run in a minimal container running as a non-privileged user:
 ```bash
-docker build -t fim:v2.2.0 .
+docker build -t fim:v2.3.0 .
 docker run -d \
   -p 127.0.0.1:8000:8000 \
   -v /etc:/monitored/etc:ro \
-  --name fim-agent fim:v2.2.0
+  --name fim-agent fim:v2.3.0
 ```
 
 ---

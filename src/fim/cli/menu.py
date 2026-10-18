@@ -47,7 +47,7 @@ class InteractiveMenu:
         print(
             f"{Colors.CYAN}{Colors.BOLD}╔══════════════════════════════════════════════════════════╗"
         )
-        print("║     FILE INTEGRITY MONITOR (FIM) v2.2                    ║")
+        print("║     FILE INTEGRITY MONITOR (FIM) v2.3                    ║")
         print("║     Cryptographic Integrity & Threat Intelligence        ║")
         print(f"╚══════════════════════════════════════════════════════════╝{Colors.RESET}\n")
 

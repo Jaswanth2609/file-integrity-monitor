@@ -124,7 +124,7 @@ class FIMHttpHandler(http.server.SimpleHTTPRequestHandler):
         if path == "/health" or path == "/api/health":
             self._send_json(
                 200,
-                {"status": "HEALTHY", "version": "2.2.0", "timestamp": time.time()},
+                {"status": "HEALTHY", "version": "2.3.0", "timestamp": time.time()},
                 include_cors=False,
             )
             return
@@ -404,7 +404,7 @@ def run_server(
     socketserver.ThreadingTCPServer.daemon_threads = True
     with socketserver.ThreadingTCPServer((host, port), FIMHttpHandler) as httpd:
         print("\n=======================================================")
-        print(" 🛡️  FIM v2.2 REST API & Web Dashboard Running (Multi-threaded)")
+        print(" 🛡️  FIM v2.3 REST API & Web Dashboard Running (Multi-threaded)")
         print(f" URL: http://{host}:{port}/")
         print(f" Auth Token File: {token_file}")
         print(" (Supply via 'Authorization: Bearer <token>' or 'X-API-Key: <token>')")

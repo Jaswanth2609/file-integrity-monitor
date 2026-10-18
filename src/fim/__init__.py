@@ -1,12 +1,12 @@
 """
-File Integrity Monitor (FIM) v2.2
+File Integrity Monitor (FIM) v2.3
 Filesystem integrity monitoring and threat detection engine.
 
 Author: Jaswanth (Jaswanth2609)
 Repository: https://github.com/Jaswanth2609/file-integrity-monitor
 """
 
-__version__ = "2.2.0"
+__version__ = "2.3.0"
 __author__ = "Jaswanth (Jaswanth2609)"
 __license__ = "MIT"
 

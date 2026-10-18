@@ -20,7 +20,7 @@ except ImportError:
 from .errors import ConfigurationError
 
 DEFAULT_CONFIG: Dict[str, Any] = {
-    "version": "2.2.0",
+    "version": "2.3.0",
     "app": {
         "name": "File Integrity Monitor",
         "secret_key": "",  # Used for HMAC-SHA256 baseline signing if not in keyring/env
