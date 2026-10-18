@@ -104,6 +104,7 @@ def create_parser() -> argparse.ArgumentParser:
     # Subcommand: watch
     watch_parser = subparsers.add_parser("watch", help="Start real-time monitoring daemon")
     watch_parser.add_argument("--profile", "-p", default="default", help="Baseline profile name")
+    watch_parser.add_argument("--public-key", default=None, help="Path to Ed25519 public key file")
 
     # Subcommand: scan
     scan_parser = subparsers.add_parser("scan", help="Scan a file or directory for threats (reputation + local)")
@@ -387,7 +388,12 @@ def main_cli(args_list: Optional[List[str]] = None) -> int:
 
     elif cmd == "watch":
         print(f"Starting real-time file integrity watcher on profile '{args.profile}'...")
-        monitor = LiveMonitor(profile_name=args.profile, config=config, db=db)
+        monitor = LiveMonitor(
+            profile_name=args.profile,
+            config=config,
+            db=db,
+            public_key_path=getattr(args, "public_key", None),
+        )
         monitor.start(block=True)
         return 0
 

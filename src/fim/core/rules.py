@@ -83,8 +83,12 @@ DEFAULT_CONFIG_EXTENSIONS = [
 class RuleEngine:
     """Evaluates file changes against configurable user-editable detection rules and severity mappings."""
 
-    def __init__(self, rules_file: Optional[Union[str, Path]] = None):
-        self.rules_file = self._resolve_rules_path(rules_file)
+    def __init__(self, rules_file: Optional[Union[str, Path, Any]] = None):
+        if hasattr(rules_file, "get"):
+            rules_path = rules_file.get("rules.custom_rules_file")
+        else:
+            rules_path = rules_file
+        self.rules_file = self._resolve_rules_path(rules_path)
         self.critical_system_paths: List[str] = list(DEFAULT_CRITICAL_SYSTEM_PATHS)
         self.executable_extensions: List[str] = list(DEFAULT_EXECUTABLE_EXTENSIONS)
         self.web_extensions: List[str] = list(DEFAULT_WEB_EXTENSIONS)

@@ -580,5 +580,50 @@ class TestFIMv2(unittest.TestCase):
         self.assertTrue(valid)
         self.assertGreaterEqual(count, 1)
 
+    def test_tc040_live_monitor_verifies_baseline_and_alerts_on_tamper(self):
+        """TC-040: LiveMonitor verifies baseline signature on change events and dispatches alert on tamper."""
+        from src.fim.core.monitor import LiveMonitor
+        test_file = Path(self.test_dir) / "monitored.txt"
+        test_file.write_text("initial content", encoding="utf-8")
+
+        b_mgr = BaselineManager(self.config, self.db)
+        b_mgr.create_baseline(name="test_mon", paths=[str(test_file)])
+
+        alerts = []
+        monitor = LiveMonitor(
+            profile_name="test_mon",
+            config=self.config,
+            db=self.db,
+            alert_callback=lambda f: alerts.append(f)
+        )
+        # Verified baseline loaded
+        baseline = monitor._get_verified_baseline()
+        self.assertIsNotNone(baseline)
+
+        # Normal file modification
+        test_file.write_text("modified content", encoding="utf-8")
+        monitor._handle_path_change(str(test_file))
+        self.assertEqual(len(alerts), 1)
+        self.assertEqual(alerts[-1]["change_type"], "MODIFIED")
+
+        # Now simulate attacker tampering with the database baseline signature
+        with self.db.get_connection() as conn:
+            conn.execute("UPDATE baselines SET signature = 'forged_signature_0000' WHERE name = 'test_mon'")
+        # Update db mtime to trigger cache invalidation
+        os.utime(self.db_path, (time.time() + 10, time.time() + 10))
+
+        # Attacker triggers or waits for a change event
+        test_file.write_text("another change", encoding="utf-8")
+        monitor._handle_path_change(str(test_file))
+
+        # Monitor should have detected the tampering, refused to trust the baseline, and alerted
+        self.assertEqual(len(alerts), 2)
+        tamper_alert = alerts[-1]
+        self.assertEqual(tamper_alert["change_type"], "TAMPERED")
+        self.assertEqual(tamper_alert["severity"], "CRITICAL")
+        self.assertEqual(tamper_alert["attack_id"], "T1565.001")
+
+
 if __name__ == "__main__":
     unittest.main()
+

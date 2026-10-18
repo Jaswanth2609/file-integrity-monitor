@@ -16,12 +16,13 @@ try:
 except ImportError:
     HAVE_WATCHDOG = False
 
-from .baseline import BaselineManager
+from .baseline import BaselineManager, BaselineManifest
 from .comparator import IntegrityComparator
 from .hasher import HashEngine
 from .rules import ChangeType, RuleEngine, Severity
 from ..alerts.manager import AlertManager
 from ..config import ConfigManager
+from ..errors import BaselineTamperedError
 from ..intel.virustotal import VirusTotalClient
 from ..storage.db import DatabaseManager
 
@@ -55,7 +56,8 @@ class LiveMonitor:
         profile_name: str = "default",
         config: Optional[ConfigManager] = None,
         db: Optional[DatabaseManager] = None,
-        alert_callback: Optional[Callable[[Dict[str, Any]], None]] = None
+        alert_callback: Optional[Callable[[Dict[str, Any]], None]] = None,
+        public_key_path: Optional[Union[str, Path]] = None,
     ):
         self.profile_name = profile_name
         self.config = config or ConfigManager()
@@ -66,6 +68,12 @@ class LiveMonitor:
         self.alert_mgr = AlertManager(self.config, self.db)
         self.vt_client = VirusTotalClient(config=self.config, db=self.db)
         self.alert_callback = alert_callback
+        self.public_key_path = public_key_path
+        self.rule_engine = RuleEngine(self.config)
+
+        self._cached_baseline: Optional[BaselineManifest] = None
+        self._db_mtime: float = 0.0
+        self._baseline_lock = threading.Lock()
 
         self.debounce_queue = DebounceEventQueue(
             debounce_seconds=float(self.config.get("monitor.debounce_seconds", 2.0))
@@ -74,9 +82,24 @@ class LiveMonitor:
         self._worker_thread: Optional[threading.Thread] = None
         self._observer: Optional[Any] = None
 
+    def _get_verified_baseline(self) -> BaselineManifest:
+        """Loads and cryptographically verifies the baseline, caching until DB modification."""
+        db_file = Path(self.db.db_path)
+        curr_mtime = db_file.stat().st_mtime if db_file.exists() else 0.0
+        with self._baseline_lock:
+            if self._cached_baseline is None or curr_mtime != self._db_mtime:
+                verified = self.baseline_mgr.load_baseline(
+                    self.profile_name,
+                    verify=True,
+                    public_key_path=self.public_key_path,
+                )
+                self._cached_baseline = verified
+                self._db_mtime = curr_mtime
+            return self._cached_baseline
+
     def start(self, block: bool = True) -> None:
         """Starts real-time monitoring and scheduler."""
-        baseline = self.baseline_mgr.load_baseline(self.profile_name, verify=True)
+        baseline = self._get_verified_baseline()
         self.running = True
 
         # Start event processing worker thread
@@ -156,7 +179,19 @@ class LiveMonitor:
     def _handle_path_change(self, path_str: str) -> None:
         p = Path(path_str)
         try:
-            baseline = self.baseline_mgr.load_baseline(self.profile_name, verify=False)
+            baseline = self._get_verified_baseline()
+        except BaselineTamperedError as e:
+            finding_data = {
+                "path": f"BASELINE:{self.profile_name}",
+                "change_type": "TAMPERED",
+                "severity": Severity.CRITICAL.value,
+                "description": f"Baseline profile '{self.profile_name}' integrity verification failed during live monitoring: {e}",
+                "attack_id": "T1565.001"
+            }
+            self.alert_mgr.dispatch(finding_data)
+            if self.alert_callback:
+                self.alert_callback(finding_data)
+            return
         except Exception:
             return
 
@@ -165,7 +200,7 @@ class LiveMonitor:
         if not p.exists():
             if b_entry:
                 # File deleted
-                sev, attack_id, desc = RuleEngine.classify_change(path_str, ChangeType.DELETED)
+                sev, attack_id, desc = self.rule_engine.classify_change(path_str, ChangeType.DELETED)
                 finding_data = {
                     "path": path_str,
                     "change_type": "DELETED",
@@ -188,7 +223,7 @@ class LiveMonitor:
 
         if not b_entry:
             # New file added
-            sev, attack_id, desc = RuleEngine.classify_change(path_str, ChangeType.ADDED)
+            sev, attack_id, desc = self.rule_engine.classify_change(path_str, ChangeType.ADDED)
             finding_data = {
                 "path": path_str,
                 "change_type": "ADDED",
@@ -210,7 +245,7 @@ class LiveMonitor:
 
         elif new_hash != b_entry.hash:
             # File modified
-            sev, attack_id, desc = RuleEngine.classify_change(path_str, ChangeType.MODIFIED)
+            sev, attack_id, desc = self.rule_engine.classify_change(path_str, ChangeType.MODIFIED)
             finding_data = {
                 "path": path_str,
                 "change_type": "MODIFIED",
