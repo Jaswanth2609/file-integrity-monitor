@@ -8,7 +8,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir --user -r requirements.txt
+RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
 
 # Final Runtime Image
 FROM python:3.12-slim
@@ -19,12 +19,22 @@ LABEL description="File Integrity Monitor (FIM) with Ed25519 signing and Threat 
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PATH="/root/.local/bin:$PATH"
+    PATH="/install/bin:$PATH" \
+    PYTHONPATH="/install/lib/python3.12/site-packages:$PYTHONPATH" \
+    HOME="/home/fim"
+
+# Create unprivileged system group and user
+RUN groupadd -r fim && useradd -r -g fim -m -d /home/fim -s /sbin/nologin fim
 
 WORKDIR /app
 
-COPY --from=builder /root/.local /root/.local
+COPY --from=builder /install /install
 COPY . /app
+
+# Ensure proper non-root permissions
+RUN chown -R fim:fim /app /home/fim
+
+USER fim
 
 # Expose Web Dashboard and REST API port
 EXPOSE 8000
