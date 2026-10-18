@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "file-integrity-monitor"
 version = "2.2.0"
-description = "Enterprise-grade File Integrity Monitor (FIM) with HMAC verification, real-time watcher, and threat intelligence"
+description = "File Integrity Monitor (FIM) with baseline signing, audit chaining, and real-time monitoring"
 readme = "README.md"
 license = { text = "MIT" }
 authors = [
@@ -46,11 +46,6 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-api = [
-    "fastapi>=0.100.0",
-    "uvicorn>=0.22.0",
-    "pydantic>=2.0.0"
-]
 dev = [
     "pytest>=7.0.0",
     "pytest-cov>=4.0.0",
