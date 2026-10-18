@@ -29,7 +29,7 @@ from ..storage.db import DatabaseManager
 def create_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="fim",
-        description="File Integrity Monitor (FIM) v2.2 - Enterprise File Integrity & Threat Intelligence",
+        description="File Integrity Monitor (FIM) v2.2 - Filesystem integrity monitoring and threat detection",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("--config", "-c", help="Path to custom configuration file (YAML/JSON)")
@@ -39,7 +39,7 @@ def create_parser() -> argparse.ArgumentParser:
 
     # Subcommand: keygen (Ed25519)
     keygen_parser = subparsers.add_parser(
-        "keygen", help="Generate asymmetric Ed25519 keypair for tamper-proof signing"
+        "keygen", help="Generate asymmetric Ed25519 keypair for baseline and anchor signing"
     )
     keygen_parser.add_argument(
         "--out-key",

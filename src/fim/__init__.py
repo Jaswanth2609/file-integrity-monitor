@@ -1,6 +1,6 @@
 """
-File Integrity Monitor (FIM) v2.1
-Enterprise-Grade File Integrity Monitoring and Threat Intelligence Enrichment.
+File Integrity Monitor (FIM) v2.2
+Filesystem integrity monitoring and threat detection engine.
 
 Author: Jaswanth (Jaswanth2609)
 Repository: https://github.com/Jaswanth2609/file-integrity-monitor
