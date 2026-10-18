@@ -11,6 +11,7 @@ import logging
 import os
 import stat
 import sqlite3
+import threading
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -36,6 +37,7 @@ class AuditChain:
     ):
         self._owned_conn = False
         self._lock_file = None
+        self._lock = threading.Lock()
 
         if isinstance(conn_or_path, sqlite3.Connection):
             self.conn = conn_or_path
@@ -43,7 +45,7 @@ class AuditChain:
         else:
             self.db_path = Path(conn_or_path or "~/.fim/audit.db").expanduser().resolve()
             self.db_path.parent.mkdir(parents=True, exist_ok=True)
-            self.conn = sqlite3.connect(str(self.db_path), timeout=30.0)
+            self.conn = sqlite3.connect(str(self.db_path), timeout=30.0, check_same_thread=False)
             self.conn.row_factory = sqlite3.Row
             self._owned_conn = True
             self._setup_connection()
@@ -60,9 +62,11 @@ class AuditChain:
 
     def _setup_connection(self) -> None:
         try:
+            self.conn.isolation_level = None
             self.conn.execute("PRAGMA journal_mode=WAL")
             self.conn.execute("PRAGMA synchronous=NORMAL")
             self.conn.execute("PRAGMA foreign_keys=ON")
+            self.conn.execute("PRAGMA busy_timeout=5000")
         except Exception:
             pass
 
@@ -74,7 +78,7 @@ class AuditChain:
             pass
 
     def _init_table(self) -> None:
-        with self.conn:
+        with self._lock:
             self.conn.execute("""
                 CREATE TABLE IF NOT EXISTS audit_log (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -106,29 +110,52 @@ class AuditChain:
         return row[0] if row else 0
 
     def append_event(self, event: str, details: Dict[str, Any]) -> int:
-        """Appends a new event to the tamper-evident audit log, updates anchor, and appends to JSONL."""
+        """
+        Appends a new event to the tamper-evident audit log, updates anchor, and appends to JSONL.
+        Reads latest hash, computes entry hash, and inserts within a single BEGIN IMMEDIATE transaction
+        to eliminate race conditions and fork risks between concurrent writers.
+        """
         ts = time.time()
         details_json = json.dumps(details, sort_keys=True)
-        prev_hash = self.get_latest_hash()
-        entry_hash = self.calculate_entry_hash(ts, event, details_json, prev_hash)
 
-        with self.conn:
+        with self._lock:
+            if self.conn.isolation_level is not None:
+                self.conn.isolation_level = None
+
             cursor = self.conn.cursor()
-            cursor.execute("""
-                INSERT INTO audit_log (ts, event, details_json, prev_hash, entry_hash)
-                VALUES (?, ?, ?, ?, ?)
-            """, (ts, event, details_json, prev_hash, entry_hash))
-            entry_id = cursor.lastrowid
+            self.conn.execute("BEGIN IMMEDIATE")
+            try:
+                cursor.execute("SELECT entry_hash FROM audit_log ORDER BY id DESC LIMIT 1")
+                row = cursor.fetchone()
+                prev_hash = row[0] if row else self.GENESIS_HASH
 
-        total_count = self.get_total_count()
+                entry_hash = self.calculate_entry_hash(ts, event, details_json, prev_hash)
 
-        # Update chain anchor file (owner read-only)
-        self._write_chain_anchor(entry_hash, total_count, ts)
+                cursor.execute("""
+                    INSERT INTO audit_log (ts, event, details_json, prev_hash, entry_hash)
+                    VALUES (?, ?, ?, ?, ?)
+                """, (ts, event, details_json, prev_hash, entry_hash))
+                entry_id = cursor.lastrowid
 
-        # Append to flat JSONL audit stream for SIEM forwarding
-        self._append_jsonl(entry_id, ts, event, details, entry_hash, prev_hash)
+                cursor.execute("SELECT COUNT(id) FROM audit_log")
+                count_row = cursor.fetchone()
+                total_count = count_row[0] if count_row else 0
 
-        return entry_id
+                self.conn.execute("COMMIT")
+            except Exception:
+                try:
+                    self.conn.execute("ROLLBACK")
+                except Exception:
+                    pass
+                raise
+
+            # Update chain anchor file (owner read-only) with exact committed count and hash
+            self._write_chain_anchor(entry_hash, total_count, ts)
+
+            # Append to flat JSONL audit stream for SIEM forwarding
+            self._append_jsonl(entry_id, ts, event, details, entry_hash, prev_hash)
+
+            return entry_id
 
     def _write_anchor_file(self, target_path: Path, payload_bytes: bytes) -> None:
         try:

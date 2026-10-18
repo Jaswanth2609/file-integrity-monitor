@@ -688,6 +688,35 @@ class TestFIMv2(unittest.TestCase):
         exported_data = json.loads(exported.read_text(encoding="utf-8"))
         self.assertEqual(exported_data["count"], 3)
 
+    def test_tc042_audit_chain_concurrent_writers_no_race(self):
+        """TC-042: Concurrent writers to AuditChain append in immediate transactions without chain forks."""
+        import threading
+        from src.fim.storage.audit_chain import AuditChain
+        race_db = Path(self.test_dir) / "race_test.db"
+        chain = AuditChain(conn_or_path=race_db)
+
+        num_threads = 8
+        events_per_thread = 5
+
+        def writer(thread_id: int):
+            for i in range(events_per_thread):
+                chain.append_event(f"THREAD_{thread_id}_EVENT_{i}", {"thread": thread_id, "iter": i})
+
+        threads = [threading.Thread(target=writer, args=(t,)) for t in range(num_threads)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        expected_total = num_threads * events_per_thread
+        valid, msg, count = chain.verify_integrity()
+        self.assertTrue(valid, f"Audit chain verification failed after concurrent writes: {msg}")
+        self.assertEqual(count, expected_total)
+
+        # Anchor count matches total committed count
+        anchor_data = json.loads(chain.anchor_path.read_text(encoding="utf-8"))
+        self.assertEqual(anchor_data["count"], expected_total)
+
 
 if __name__ == "__main__":
     unittest.main()
