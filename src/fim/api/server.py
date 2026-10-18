@@ -304,9 +304,13 @@ def resolve_api_token(cfg: ConfigManager) -> str:
         token_file.write_text(generated, encoding="utf-8")
         if os.name != "nt":
             os.chmod(token_file, stat.S_IRUSR | stat.S_IWUSR)
-        return generated
-    except Exception:
-        return secrets.token_hex(32)
+    except Exception as e:
+        logger.error(f"Failed to access or persist API token to '{token_file}': {e}")
+        raise RuntimeError(
+            f"Failed to read or persist API token at '{token_file}': {e}. "
+            f"Please ensure write permissions to '{token_file.parent}' or configure an explicit token "
+            f"via the 'FIM_API_TOKEN' environment variable or 'api.bearer_token' in config."
+        ) from e
 
 
 def run_server(

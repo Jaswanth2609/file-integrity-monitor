@@ -790,6 +790,18 @@ class TestFIMv2(unittest.TestCase):
         FIMHttpHandler.do_GET(handler)
         self.assertEqual(responses[-1][0], 400)
 
+    def test_tc045_resolve_api_token_fails_hard_on_write_error(self):
+        """TC-045: resolve_api_token raises RuntimeError with explanation if token cannot be persisted."""
+        from unittest.mock import patch
+        cfg = ConfigManager()
+        cfg.set("api.bearer_token", "")
+        cfg.set("database.path", str(Path(self.test_dir) / "no_token_dir" / "test.db"))
+        with patch.dict(os.environ, {}, clear=True):
+            with patch("pathlib.Path.write_text", side_effect=PermissionError("Permission denied")):
+                with self.assertRaises(RuntimeError) as ctx:
+                    resolve_api_token(cfg)
+                self.assertIn("Failed to read or persist API token", str(ctx.exception))
+
 
 if __name__ == "__main__":
     unittest.main()
