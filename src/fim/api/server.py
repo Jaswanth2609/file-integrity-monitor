@@ -323,16 +323,17 @@ def run_server(
     FIMHttpHandler.web_dir = web_dir
     FIMHttpHandler.api_token = api_token
 
+    token_file = cfg.db_path.parent / ".api_token"
     socketserver.ThreadingTCPServer.allow_reuse_address = True
     socketserver.ThreadingTCPServer.daemon_threads = True
     with socketserver.ThreadingTCPServer((host, port), FIMHttpHandler) as httpd:
         print(f"\n=======================================================")
         print(f" 🛡️  FIM v2.2 REST API & Web Dashboard Running (Multi-threaded)")
         print(f" URL: http://{host}:{port}/")
-        print(f" API Token (Authorization: Bearer <token> / X-API-Key: <token>)")
-        print(f" Token: {api_token}")
+        print(f" Auth Token File: {token_file}")
+        print(f" (Supply via 'Authorization: Bearer <token>' or 'X-API-Key: <token>')")
         print(f" Health Check: http://{host}:{port}/health")
-        print(f" Prometheus Metrics: curl -H 'Authorization: Bearer {api_token}' http://{host}:{port}/metrics")
+        print(f" Prometheus Metrics: curl -H \"Authorization: Bearer $(cat '{token_file}')\" http://{host}:{port}/metrics")
         print(f"=======================================================\n")
         try:
             httpd.serve_forever()
