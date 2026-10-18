@@ -750,6 +750,37 @@ class TestFIMv2(unittest.TestCase):
         self.assertEqual(responses[-1][0], 413)
         self.assertIn("too large", responses[-1][1]["error"])
 
+    def test_tc044_findings_invalid_limit_returns_400(self):
+        """TC-044: /findings and /audit with invalid limit query parameter return HTTP 400."""
+        responses = []
+
+        class MockGetHandler:
+            headers = {}
+            db = self.db
+
+            def _check_auth(self):
+                return True
+
+            def _send_json(self, status, payload):
+                responses.append((status, payload))
+
+        # 1. Non-integer limit on /findings
+        handler = MockGetHandler()
+        handler.path = "/api/findings?limit=abc"
+        FIMHttpHandler.do_GET(handler)
+        self.assertEqual(responses[-1][0], 400)
+        self.assertIn("Invalid 'limit'", responses[-1][1]["error"])
+
+        # 2. Negative limit on /findings
+        handler.path = "/api/findings?limit=-5"
+        FIMHttpHandler.do_GET(handler)
+        self.assertEqual(responses[-1][0], 400)
+
+        # 3. Non-integer limit on /audit
+        handler.path = "/api/audit?limit=xyz"
+        FIMHttpHandler.do_GET(handler)
+        self.assertEqual(responses[-1][0], 400)
+
 
 if __name__ == "__main__":
     unittest.main()

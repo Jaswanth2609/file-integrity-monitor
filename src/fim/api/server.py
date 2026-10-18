@@ -164,13 +164,28 @@ class FIMHttpHandler(http.server.SimpleHTTPRequestHandler):
             self._send_json(200, {"baselines": baselines})
 
         elif path == "/findings" or path == "/api/findings":
-            limit = int(query.get("limit", [100])[0])
+            raw_limit = query.get("limit", ["100"])[0]
+            try:
+                limit = int(raw_limit)
+                if limit < 0:
+                    raise ValueError("limit must be non-negative")
+            except (ValueError, TypeError):
+                self._send_json(400, {"error": f"Invalid 'limit' query parameter: '{raw_limit}'. Must be a non-negative integer."})
+                return
             findings = self.db.get_unresolved_findings(limit=limit)
             self._send_json(200, {"findings": findings})
 
         elif path == "/audit" or path == "/api/audit":
+            raw_limit = query.get("limit", ["50"])[0]
+            try:
+                limit = int(raw_limit)
+                if limit < 0:
+                    raise ValueError("limit must be non-negative")
+            except (ValueError, TypeError):
+                self._send_json(400, {"error": f"Invalid 'limit' query parameter: '{raw_limit}'. Must be a non-negative integer."})
+                return
             valid, msg, count = self.db.audit.verify_integrity()
-            events = self.db.audit.get_events(limit=50)
+            events = self.db.audit.get_events(limit=limit)
             self._send_json(200, {
                 "chain_valid": valid,
                 "message": msg,
