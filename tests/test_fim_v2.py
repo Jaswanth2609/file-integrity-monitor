@@ -717,6 +717,39 @@ class TestFIMv2(unittest.TestCase):
         anchor_data = json.loads(chain.anchor_path.read_text(encoding="utf-8"))
         self.assertEqual(anchor_data["count"], expected_total)
 
+    def test_tc043_post_request_body_size_and_content_length_validation(self):
+        """TC-043: do_POST rejects malformed Content-Length (400) and oversized bodies (413)."""
+        responses = []
+
+        class MockPostHandler:
+            path = "/api/baselines"
+            headers = {}
+            MAX_REQUEST_BODY_BYTES = FIMHttpHandler.MAX_REQUEST_BODY_BYTES
+
+            def _check_auth(self):
+                return True
+
+            def _send_json(self, status, payload):
+                responses.append((status, payload))
+
+        # 1. Malformed Content-Length: non-integer
+        handler = MockPostHandler()
+        handler.headers = {"Content-Length": "not-a-number"}
+        FIMHttpHandler.do_POST(handler)
+        self.assertEqual(responses[-1][0], 400)
+        self.assertIn("Invalid Content-Length", responses[-1][1]["error"])
+
+        # 2. Malformed Content-Length: negative
+        handler.headers = {"Content-Length": "-100"}
+        FIMHttpHandler.do_POST(handler)
+        self.assertEqual(responses[-1][0], 400)
+
+        # 3. Oversized Content-Length: exceeds 10MB limit
+        handler.headers = {"Content-Length": str(20 * 1024 * 1024)}
+        FIMHttpHandler.do_POST(handler)
+        self.assertEqual(responses[-1][0], 413)
+        self.assertIn("too large", responses[-1][1]["error"])
+
 
 if __name__ == "__main__":
     unittest.main()

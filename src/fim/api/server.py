@@ -208,6 +208,8 @@ class FIMHttpHandler(http.server.SimpleHTTPRequestHandler):
         else:
             self._send_json(404, {"error": f"Endpoint {path} not found"})
 
+    MAX_REQUEST_BODY_BYTES = 10 * 1024 * 1024  # 10 MB limit
+
     def do_POST(self):
         parsed = urlparse(self.path)
         path = parsed.path
@@ -216,7 +218,21 @@ class FIMHttpHandler(http.server.SimpleHTTPRequestHandler):
             self._send_json(401, {"error": "Unauthorized. Provide Authorization: Bearer <token> or X-API-Key: <token>."})
             return
 
-        content_len = int(self.headers.get("Content-Length", 0))
+        raw_len = self.headers.get("Content-Length", "0")
+        try:
+            content_len = int(raw_len)
+            if content_len < 0:
+                raise ValueError("Negative Content-Length")
+        except (ValueError, TypeError):
+            self._send_json(400, {"error": f"Invalid Content-Length header: '{raw_len}'"})
+            return
+
+        if content_len > self.MAX_REQUEST_BODY_BYTES:
+            self._send_json(413, {
+                "error": f"Request body too large ({content_len} bytes). Maximum allowed is {self.MAX_REQUEST_BODY_BYTES} bytes."
+            })
+            return
+
         post_body = self.rfile.read(content_len).decode("utf-8") if content_len > 0 else "{}"
         try:
             body = json.loads(post_body)
