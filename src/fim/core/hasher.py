@@ -118,9 +118,9 @@ class HashEngine:
             elif a == "blake2b":
                 hashers["blake2b"] = hashlib.blake2b()
             elif a == "md5":
-                hashers["md5"] = hashlib.md5(usedforsecurity=False)  # nosec B324
+                hashers["md5"] = hashlib.md5(usedforsecurity=False)
             elif a == "sha1":
-                hashers["sha1"] = hashlib.sha1(usedforsecurity=False)  # nosec B324
+                hashers["sha1"] = hashlib.sha1(usedforsecurity=False)
 
         open_flags = os.O_RDONLY
         if hasattr(os, "O_NOFOLLOW"):
