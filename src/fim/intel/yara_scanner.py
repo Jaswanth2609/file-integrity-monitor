@@ -1,5 +1,5 @@
 """
-YARA Threat Intelligence Scanner Engine for FIM v2.1.
+YARA Threat Intelligence Scanner Engine for FIM v2.3.
 Scans new and modified files for malicious patterns, webshells, reverse shells,
 and dropper signatures.
 Supports native yara-python when installed, and provides a built-in pure-Python

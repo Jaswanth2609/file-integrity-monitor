@@ -1,5 +1,5 @@
 """
-Alert Manager for FIM v2.0.
+Alert Manager for FIM v2.3.
 Handles minimum severity thresholds, cooldown de-duplication, and channel dispatching.
 """
 

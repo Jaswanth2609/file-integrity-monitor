@@ -1,5 +1,5 @@
 """
-Unified Threat Intelligence Aggregator for FIM v2.1.
+Unified Threat Intelligence Aggregator for FIM v2.3.
 Coordinates lookups across Local Known Hashes DB, VirusTotal API v3, MalwareBazaar, and CIRCL Hashlookup.
 """
 
@@ -58,7 +58,7 @@ class ThreatIntelAggregator:
                 "sha256" if len(clean_hash) == 64 else ("md5" if len(clean_hash) == 32 else "sha1")
             )
             url = f"https://hashlookup.circl.lu/lookup/{algo}/{clean_hash}"
-            req = urllib.request.Request(url, headers={"User-Agent": "FIM-v2.1-ThreatIntel/1.0"})
+            req = urllib.request.Request(url, headers={"User-Agent": "FIM-v2.3-ThreatIntel/1.0"})
             with urllib.request.urlopen(req, timeout=5.0) as resp:  # nosec B310
                 if resp.status == 200:
                     data = json.loads(resp.read().decode("utf-8"))

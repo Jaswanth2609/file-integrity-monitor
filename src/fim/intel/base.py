@@ -1,5 +1,5 @@
 """
-Threat Intelligence Base Classes and Verdict Types for FIM v2.0.
+Threat Intelligence Base Classes and Verdict Types for FIM v2.3.
 """
 
 from abc import ABC, abstractmethod

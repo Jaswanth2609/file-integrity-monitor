@@ -1,5 +1,5 @@
 """
-Command-Line Interface (CLI) Engine for FIM v2.1.
+Command-Line Interface (CLI) Engine for FIM v2.3.
 Implements subcommands: baseline, check, watch, scan, hash, audit, db, keygen, report, config, serve, menu.
 """
 

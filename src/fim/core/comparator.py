@@ -1,5 +1,5 @@
 """
-Change Detection Engine for FIM v2.1.
+Change Detection Engine for FIM v2.3.
 Compares current filesystem state against trusted baseline snapshots.
 Detects ADDED, MODIFIED, DELETED, PERMISSION_CHANGED, OWNER_CHANGED, and RENAMED events.
 Integrates YARA scanning on modified/added files and OS package manager verification (dpkg, rpm, pacman).

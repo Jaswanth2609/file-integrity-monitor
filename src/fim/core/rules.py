@@ -1,5 +1,5 @@
 """
-Rules, Severity Scoring, and MITRE ATT&CK Mapping for FIM v2.1.
+Rules, Severity Scoring, and MITRE ATT&CK Mapping for FIM v2.3.
 Supports loading user-editable detection and severity rules from config/rules.yaml.
 """
 

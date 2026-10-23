@@ -1,5 +1,5 @@
 """
-Asymmetric Cryptography Engine (Ed25519) for FIM v2.1.
+Asymmetric Cryptography Engine (Ed25519) for FIM v2.3.
 Enables asymmetric baseline and audit-log signing, protecting against root-level tampering.
 Even if an attacker gains root on a monitored host, possessing only the public key prevents
 them from forging signatures or re-signing tampered baselines.

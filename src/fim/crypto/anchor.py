@@ -1,5 +1,5 @@
 """
-External Chain-Head Anchoring Engine for FIM v2.1.
+External Chain-Head Anchoring Engine for FIM v2.3.
 Enables cryptographic anchoring of the append-only audit chain head to external media, WORM storage,
 or remote audit endpoints.
 Protects against root attackers attempting to rewrite local SQLite audit records and recompute hashes.

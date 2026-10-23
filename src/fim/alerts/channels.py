@@ -1,5 +1,5 @@
 """
-Alert Notification Channels for FIM v2.0.
+Alert Notification Channels for FIM v2.3.
 Supports Console, Log File, SMTP Email, Slack Webhook, Telegram Bot, Webhooks, and Syslog.
 """
 
@@ -164,7 +164,7 @@ class EmailAlertChannel:
             msg["To"] = self.cfg.get("recipient")
 
             body = (
-                f"Security Alert from File Integrity Monitor v2.0\n\n"
+                f"Security Alert from File Integrity Monitor v2.3\n\n"
                 f"Severity    : {sev}\n"
                 f"Path        : {alert_data.get('path')}\n"
                 f"Change Type : {alert_data.get('change_type')}\n"

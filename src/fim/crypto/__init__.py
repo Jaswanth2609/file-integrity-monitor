@@ -1,5 +1,5 @@
 """
-Cryptographic subsystems for FIM v2.1.
+Cryptographic subsystems for FIM v2.3.
 Entropy checks, Ed25519 asymmetric signatures, and chain-head anchoring.
 """
 

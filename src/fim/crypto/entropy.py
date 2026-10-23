@@ -1,5 +1,5 @@
 """
-Cryptographic Entropy and Key Safety Validator for FIM v2.1.
+Cryptographic Entropy and Key Safety Validator for FIM v2.3.
 Calculates Shannon entropy, enforces file-based 0600 key storage, and prevents low-entropy secrets.
 """
 

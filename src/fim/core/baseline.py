@@ -1,5 +1,5 @@
 """
-Baseline Management Engine for FIM v2.1.
+Baseline Management Engine for FIM v2.3.
 Handles baseline creation, cryptographic HMAC-SHA256 and Ed25519 asymmetric signing,
 key fingerprinting, safe migration protocols, glob filtering, .fimignore support, diffing,
 symlink resolution, and automated backup hooks.

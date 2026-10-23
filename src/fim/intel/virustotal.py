@@ -95,7 +95,7 @@ class VirusTotalClient(BaseIntelProvider):
 
         # 3. HTTP Request with exponential backoff
         url = f"{self.BASE_URL}{clean_hash}"
-        headers = {"x-apikey": self.api_key, "User-Agent": "FIM-v2.0-AgenticMonitor/1.0"}
+        headers = {"x-apikey": self.api_key, "User-Agent": "FIM-v2.3-AgenticMonitor/1.0"}
 
         raw_data: Optional[Dict[str, Any]] = None
         status_code = 0

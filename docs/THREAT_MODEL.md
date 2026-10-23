@@ -1,8 +1,8 @@
-# File Integrity Monitor (FIM) v2.1 — Threat Model & Trust Assumptions
+# File Integrity Monitor (FIM) v2.3 — Threat Model & Trust Assumptions
 
 ## 1. Executive Summary & Scope
 
-File Integrity Monitor (FIM) v2.1 is designed to detect unauthorized filesystem modifications, malicious payload drops, configuration drift, and persistence mechanisms across monitored operating system directories.
+File Integrity Monitor (FIM) v2.3 is designed to detect unauthorized filesystem modifications, malicious payload drops, configuration drift, and persistence mechanisms across monitored operating system directories.
 
 This document outlines the security guarantees, attacker personas, detection boundaries, and cryptographic mitigation models implemented in FIM.
 

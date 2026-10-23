@@ -1,5 +1,5 @@
 """
-Cryptographically Hash-Chained Audit Log for FIM v2.1.
+Cryptographically Hash-Chained Audit Log for FIM v2.3.
 Ensures append-only tamper evidence: each log record embeds the SHA-256 hash of the preceding record.
 Stores audit events in a dedicated audit database, continuously updates external chain anchors,
 and maintains a flat JSONL audit stream for SIEM ingestion.

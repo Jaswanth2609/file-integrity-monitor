@@ -1,5 +1,5 @@
 """
-Structured Logging Subsystem for File Integrity Monitor (FIM) v2.0.
+Structured Logging Subsystem for File Integrity Monitor (FIM) v2.3.
 Supports JSON format, standard text format, correlation IDs, and automated secret redaction.
 """
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Main Entrypoint for File Integrity Monitor (FIM) v2.0.
+Main Entrypoint for File Integrity Monitor (FIM) v2.3.
 Supports subcommands, legacy v1 arguments, and interactive menu mode.
 
 Author: Jaswanth (Jaswanth2609)

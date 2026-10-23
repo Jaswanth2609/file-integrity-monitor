@@ -1,5 +1,5 @@
 """
-Real-time Filesystem Event Monitor and Scheduler for FIM v2.0.
+Real-time Filesystem Event Monitor and Scheduler for FIM v2.3.
 Supports event debouncing, scheduled re-verification, threat intel enrichment, and alerting.
 """
 

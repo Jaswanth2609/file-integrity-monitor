@@ -1,5 +1,5 @@
 """
-Interactive ANSI Terminal Menu for FIM v2.1.
+Interactive ANSI Terminal Menu for FIM v2.3.
 Provides rich interactive console UI with colors, status badges, Ed25519 public key prompting,
 and unified threat intelligence feeds.
 """
@@ -30,7 +30,7 @@ class Colors:
 
 
 class InteractiveMenu:
-    """Terminal UI for File Integrity Monitor v2.1."""
+    """Terminal UI for File Integrity Monitor v2.3."""
 
     def __init__(self, config: Optional[ConfigManager] = None):
         self.config = config or ConfigManager()

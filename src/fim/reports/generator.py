@@ -1,5 +1,5 @@
 """
-Multi-Format Report Generator for FIM v2.1.
+Multi-Format Report Generator for FIM v2.3.
 Exports verification and scan results to JSON, CSV, formatted TXT, and interactive HTML.
 Supports both direct string returns (for HTTP API endpoints) and file persistence.
 """
@@ -28,8 +28,8 @@ class ReportGenerator:
         """Exports report to formatted JSON following the FIM schema."""
         norm = ReportGenerator._normalize_data(data)
         wrapped = {
-            "schema_version": "2.1.0",
-            "generator": "File Integrity Monitor (FIM) v2.1",
+            "schema_version": "2.3.0",
+            "generator": "File Integrity Monitor (FIM) v2.3",
             "exported_at": datetime.now(timezone.utc).isoformat(),
             "report_data": norm,
         }
@@ -86,7 +86,7 @@ class ReportGenerator:
 
         lines = [
             "=" * 78,
-            " FILE INTEGRITY MONITOR (FIM) v2.1 - AUDIT REPORT",
+            " FILE INTEGRITY MONITOR (FIM) v2.3 - AUDIT REPORT",
             "=" * 78,
             f" Report Generated : {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}",
             f" Profile / Target : {norm.get('profile', norm.get('target', 'Manual Scan'))}",
@@ -163,7 +163,7 @@ class ReportGenerator:
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>FIM v2.1 - Security Audit Report</title>
+    <title>FIM v2.3 - Security Audit Report</title>
     <style>
         :root {{
             --bg-primary: #0f172a;

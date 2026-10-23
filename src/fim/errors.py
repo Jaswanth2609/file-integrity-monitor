@@ -1,5 +1,5 @@
 """
-Error Codes and Exception Handling for File Integrity Monitor (FIM) v2.0.
+Error Codes and Exception Handling for File Integrity Monitor (FIM) v2.3.
 """
 
 from typing import Optional, Dict

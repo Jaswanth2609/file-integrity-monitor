@@ -1,5 +1,5 @@
 """
-Package Manager Verification Engine for FIM v2.1.
+Package Manager Verification Engine for FIM v2.3.
 Cross-references detected filesystem changes against the OS package manager (dpkg, rpm, pacman)
 to eliminate false positives on routine system updates.
 """

@@ -1,5 +1,5 @@
 """
-Configuration Manager for File Integrity Monitor (FIM) v2.0.
+Configuration Manager for File Integrity Monitor (FIM) v2.3.
 Handles secure loading, schema validation, environment variables, and OS keyring fallback.
 """
 

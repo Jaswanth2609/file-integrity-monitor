@@ -1,5 +1,5 @@
 """
-REST API and Static Dashboard Server for FIM v2.1.
+REST API and Static Dashboard Server for FIM v2.3.
 Exposes endpoints for baselines, verification checks, findings, reports download, Prometheus metrics, and UI dashboard.
 Enforces loopback interface bind security, CORS origin allowlist, and header-only API/Dashboard authentication.
 """

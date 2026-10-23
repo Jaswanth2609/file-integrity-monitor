@@ -1,5 +1,5 @@
 """
-Rate Limiter, Daily Quota Tracker, and Threat Intel Cache Manager for FIM v2.0.
+Rate Limiter, Daily Quota Tracker, and Threat Intel Cache Manager for FIM v2.3.
 """
 
 import threading

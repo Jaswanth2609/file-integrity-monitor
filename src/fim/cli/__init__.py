@@ -1,5 +1,5 @@
 """
-CLI Module for File Integrity Monitor (FIM) v2.0.
+CLI Module for File Integrity Monitor (FIM) v2.3.
 """
 
 from .commands import main_cli, create_parser

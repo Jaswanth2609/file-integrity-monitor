@@ -1,5 +1,5 @@
 """
-Database persistence engine for FIM v2.1 using SQLite with WAL mode resilience.
+Database persistence engine for FIM v2.3 using SQLite with WAL mode resilience.
 Includes parameterized queries, schema migrations, key registry, and multi-file audit separation.
 """
 

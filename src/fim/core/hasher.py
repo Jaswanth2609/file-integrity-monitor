@@ -1,5 +1,5 @@
 """
-High-Performance Cryptographic Hashing Engine for FIM v2.1.
+High-Performance Cryptographic Hashing Engine for FIM v2.3.
 Supports SHA-256 (default), SHA-512, BLAKE2b, legacy algorithms (MD5, SHA-1),
 chunked streaming, parallel processing, and OS-level TOCTOU-safe file descriptor hashing.
 """
