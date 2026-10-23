@@ -101,7 +101,17 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "max_history_records": 5000,
         "audit_chain_enabled": True,
     },
-    "api": {"host": "127.0.0.1", "port": 8000, "bearer_token": "", "cors_origins": ["*"]},
+    "api": {
+        "host": "127.0.0.1",
+        "port": 8000,
+        "bearer_token": "",
+        "allowed_origins": [
+            "http://localhost:8000",
+            "http://127.0.0.1:8000",
+            "http://localhost",
+            "http://127.0.0.1",
+        ],
+    },
     "ui": {"colored_output": True, "theme": "dark", "progress_bar_threshold_mb": 10},
 }
 
