@@ -94,11 +94,24 @@ Core runtime dependencies: `cryptography`, `pyyaml`, `requests`, `watchdog`.
 
 ## Command Reference
 
+> [!TIP]
+> Commands can be run using either the installed entry point (`fim <command>`) or directly via Python (`python3 main.py <command>`). Running `python3 main.py` without arguments launches the interactive terminal menu.
+
+### Quick Start: Interactive Menu
+
+Launch the interactive terminal interface:
+```bash
+python3 main.py
+# or
+fim menu
+```
+
 ### 1. Key Generation (Ed25519)
 
 Generate an asymmetric keypair for baseline and anchor signing:
 ```bash
-fim keygen --out-key ~/.fim/fim_ed25519 --out-pub ~/.fim/fim_ed25519.pub
+python3 main.py keygen --out-key ~/.fim/fim_ed25519 --out-pub ~/.fim/fim_ed25519.pub
+# or: fim keygen --out-key ~/.fim/fim_ed25519 --out-pub ~/.fim/fim_ed25519.pub
 ```
 
 ### 2. Baseline Management
