@@ -89,7 +89,7 @@ class FIMHttpHandler(http.server.SimpleHTTPRequestHandler):
         URL query parameter tokens are explicitly rejected to prevent leakage in server access logs and Referer headers.
         """
         if not self.api_token:
-            return True
+            return False
 
         # Check Authorization header: Bearer <token>
         auth = self.headers.get("Authorization", "")
