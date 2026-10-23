@@ -6,7 +6,7 @@ Author: Jaswanth (Jaswanth2609)
 Repository: https://github.com/Jaswanth2609/file-integrity-monitor
 """
 
-__version__ = "2.3.0"
+__version__ = "2.3.1"
 __author__ = "Jaswanth (Jaswanth2609)"
 __license__ = "MIT"
 
