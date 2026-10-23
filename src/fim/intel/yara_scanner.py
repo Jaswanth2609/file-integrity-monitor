@@ -21,6 +21,8 @@ try:
 except ImportError:
     HAVE_NATIVE_YARA = False
 
+_FALLBACK_WARNED = False
+
 DEFAULT_YARA_RULES = """
 rule WebShell_PHP_Generic {
     meta:
@@ -188,6 +190,7 @@ class YaraEngine:
             except Exception as e:
                 logger.warning(f"Failed to load custom YARA rules from {self.rules_path}: {e}")
 
+        global _FALLBACK_WARNED
         if HAVE_NATIVE_YARA:
             try:
                 self._native_rules = yara.compile(source=combined_rules)
@@ -196,6 +199,12 @@ class YaraEngine:
                 logger.warning(f"Native YARA compilation failed, using fallback engine: {e}")
                 self._pure_parser = PurePythonYaraParser(combined_rules)
         else:
+            if not _FALLBACK_WARNED:
+                logger.warning(
+                    "[!] yara-python not installed — using pure-Python fallback (weaker detection).\n"
+                    "    Install with: pip install yara-python"
+                )
+                _FALLBACK_WARNED = True
             self._pure_parser = PurePythonYaraParser(combined_rules)
 
     def scan_file(self, file_path: Union[str, Path], max_size_mb: int = 20) -> List[YaraMatch]:
