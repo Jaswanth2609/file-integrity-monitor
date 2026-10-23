@@ -51,7 +51,7 @@ class TestFIMv2(unittest.TestCase):
         self.config = ConfigManager(str(self.config_path))
         self.config.set("database.path", str(self.db_path))
         self.config.set("database.audit_log_path", str(self.audit_db_path))
-        self.config.set("app.secret_key", "test-secret-hmac-key-v2-secure")
+        self.config.set("app.secret_key", "test-secret-hmac-key-v2-secure-9x8f7a6b")
         self.config.save()
 
         self.db = DatabaseManager(self.db_path, audit_db_path=self.audit_db_path)

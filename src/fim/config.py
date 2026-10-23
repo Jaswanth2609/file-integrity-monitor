@@ -305,7 +305,7 @@ class ConfigManager:
         env_key = os.getenv("FIM_SECRET_KEY")
         if env_key and env_key.strip():
             k = env_key.strip()
-            ok, msg = validate_secret_entropy(k, min_length=16, min_entropy=2.5)
+            ok, msg = validate_secret_entropy(k, min_length=16, min_entropy=3.5)
             if not ok:
                 raise ValueError(f"FIM_SECRET_KEY failed entropy/security validation: {msg}")
             return k
@@ -313,7 +313,7 @@ class ConfigManager:
         cfg_key = self.get("app.secret_key", "")
         if cfg_key and str(cfg_key).strip():
             k = str(cfg_key).strip()
-            ok, msg = validate_secret_entropy(k, min_length=16, min_entropy=2.5)
+            ok, msg = validate_secret_entropy(k, min_length=16, min_entropy=3.5)
             if not ok:
                 raise ValueError(f"app.secret_key failed entropy/security validation: {msg}")
             return k

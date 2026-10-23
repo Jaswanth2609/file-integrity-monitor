@@ -41,7 +41,7 @@ def calculate_shannon_entropy(data: Union[str, bytes]) -> float:
 
 
 def validate_secret_entropy(
-    secret: str, min_length: int = 16, min_entropy: float = 3.0
+    secret: str, min_length: int = 16, min_entropy: float = 3.5
 ) -> Tuple[bool, str]:
     """
     Validates that a master key or passphrase meets minimum length and entropy thresholds.
@@ -95,7 +95,7 @@ def load_secure_key_file(
             )
 
     content = p.read_text(encoding="utf-8").strip()
-    valid, msg = validate_secret_entropy(content, min_length=16, min_entropy=2.5)
+    valid, msg = validate_secret_entropy(content, min_length=16, min_entropy=3.5)
     if not valid:
         raise ValueError(f"Key file '{p}' failed security check: {msg}")
 
