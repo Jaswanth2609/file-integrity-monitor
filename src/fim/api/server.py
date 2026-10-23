@@ -329,7 +329,11 @@ class FIMHttpHandler(http.server.SimpleHTTPRequestHandler):
 
 def resolve_api_token(cfg: ConfigManager) -> str:
     """Retrieves API bearer token from config, env, or ~/.fim/.api_token with 0600 permissions."""
-    token = cfg.get("api.bearer_token") or os.getenv("FIM_API_TOKEN")
+    token = (
+        cfg.get("api.bearer_token")
+        or os.getenv("FIM_API_TOKEN")
+        or os.getenv("FIM_API_BEARER_TOKEN")
+    )
     if token and str(token).strip():
         return str(token).strip()
 
@@ -350,7 +354,7 @@ def resolve_api_token(cfg: ConfigManager) -> str:
         raise RuntimeError(
             f"Failed to read or persist API token at '{token_file}': {e}. "
             f"Please ensure write permissions to '{token_file.parent}' or configure an explicit token "
-            f"via the 'FIM_API_TOKEN' environment variable or 'api.bearer_token' in config."
+            f"via the 'FIM_API_TOKEN' or 'FIM_API_BEARER_TOKEN' environment variable or 'api.bearer_token' in config."
         ) from e
 
 

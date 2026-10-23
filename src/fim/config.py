@@ -234,7 +234,7 @@ class ConfigManager:
             self.data["alerts"]["channels"]["telegram"]["chat_id"] = tg_chat.strip()
             self.data["alerts"]["channels"]["telegram"]["enabled"] = True
 
-        api_token = os.getenv("FIM_API_BEARER_TOKEN")
+        api_token = os.getenv("FIM_API_TOKEN") or os.getenv("FIM_API_BEARER_TOKEN")
         if api_token:
             self.data["api"]["bearer_token"] = api_token.strip()
 
