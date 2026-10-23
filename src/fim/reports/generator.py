@@ -24,6 +24,15 @@ class ReportGenerator:
         return {"data": str(data)}
 
     @staticmethod
+    def _write_or_return(content: str, output_path: Optional[Union[str, Path]]) -> str:
+        if output_path:
+            out = Path(output_path).expanduser().resolve()
+            out.parent.mkdir(parents=True, exist_ok=True)
+            out.write_text(content, encoding="utf-8")
+            return str(out)
+        return content
+
+    @staticmethod
     def export_to_json(data: Any, output_path: Optional[Union[str, Path]] = None) -> str:
         """Exports report to formatted JSON following the FIM schema."""
         norm = ReportGenerator._normalize_data(data)
@@ -33,15 +42,7 @@ class ReportGenerator:
             "exported_at": datetime.now(timezone.utc).isoformat(),
             "report_data": norm,
         }
-        content = json.dumps(wrapped, indent=2)
-
-        if output_path:
-            out = Path(output_path).expanduser().resolve()
-            out.parent.mkdir(parents=True, exist_ok=True)
-            out.write_text(content, encoding="utf-8")
-            return str(out)
-
-        return content
+        return ReportGenerator._write_or_return(json.dumps(wrapped, indent=2), output_path)
 
     @staticmethod
     def export_to_csv(data: Any, output_path: Optional[Union[str, Path]] = None) -> str:
@@ -69,14 +70,7 @@ class ReportGenerator:
                 writer.writerow(row)
 
         content = output_io.getvalue()
-
-        if output_path:
-            out = Path(output_path).expanduser().resolve()
-            out.parent.mkdir(parents=True, exist_ok=True)
-            out.write_text(content, encoding="utf-8")
-            return str(out)
-
-        return content
+        return ReportGenerator._write_or_return(content, output_path)
 
     @staticmethod
     def export_to_txt(data: Any, output_path: Optional[Union[str, Path]] = None) -> str:
@@ -114,15 +108,7 @@ class ReportGenerator:
                 lines.append("")
 
         lines.append("=" * 78)
-        content = "\n".join(lines)
-
-        if output_path:
-            out = Path(output_path).expanduser().resolve()
-            out.parent.mkdir(parents=True, exist_ok=True)
-            out.write_text(content, encoding="utf-8")
-            return str(out)
-
-        return content
+        return ReportGenerator._write_or_return("\n".join(lines), output_path)
 
     @staticmethod
     def export_to_html(data: Any, output_path: Optional[Union[str, Path]] = None) -> str:
@@ -299,10 +285,4 @@ class ReportGenerator:
 </body>
 </html>
 """
-        if output_path:
-            out = Path(output_path).expanduser().resolve()
-            out.parent.mkdir(parents=True, exist_ok=True)
-            out.write_text(html_content, encoding="utf-8")
-            return str(out)
-
-        return html_content
+        return ReportGenerator._write_or_return(html_content, output_path)

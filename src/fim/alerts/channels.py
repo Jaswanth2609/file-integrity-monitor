@@ -45,6 +45,17 @@ class LogFileAlertChannel:
         return True
 
 
+def _post_json(url: str, payload: Dict[str, Any], headers: Optional[Dict[str, str]] = None) -> bool:
+    try:
+        data = json.dumps(payload).encode("utf-8")
+        h = headers or {"Content-Type": "application/json"}
+        req = urllib.request.Request(url, data=data, headers=h)
+        with urllib.request.urlopen(req, timeout=10) as resp:  # nosec B310
+            return resp.status in (200, 201, 202, 204)
+    except Exception:
+        return False
+
+
 class SlackAlertChannel:
     def __init__(self, webhook_url: str):
         self.webhook_url = webhook_url
@@ -92,15 +103,7 @@ class SlackAlertChannel:
                 }
             ]
         }
-        try:
-            data = json.dumps(payload).encode("utf-8")
-            req = urllib.request.Request(
-                self.webhook_url, data=data, headers={"Content-Type": "application/json"}
-            )
-            with urllib.request.urlopen(req, timeout=10) as resp:  # nosec B310
-                return resp.status == 200
-        except Exception:
-            return False
+        return _post_json(self.webhook_url, payload)
 
 
 class TelegramAlertChannel:
@@ -121,15 +124,7 @@ class TelegramAlertChannel:
         )
         url = f"https://api.telegram.org/bot{self.bot_token}/sendMessage"
         payload = {"chat_id": self.chat_id, "text": text, "parse_mode": "Markdown"}
-        try:
-            data = json.dumps(payload).encode("utf-8")
-            req = urllib.request.Request(
-                url, data=data, headers={"Content-Type": "application/json"}
-            )
-            with urllib.request.urlopen(req, timeout=10) as resp:  # nosec B310
-                return resp.status == 200
-        except Exception:
-            return False
+        return _post_json(url, payload)
 
 
 class WebhookAlertChannel:
@@ -140,13 +135,7 @@ class WebhookAlertChannel:
     def send(self, alert_data: Dict[str, Any]) -> bool:
         if not self.url:
             return False
-        try:
-            data = json.dumps(alert_data).encode("utf-8")
-            req = urllib.request.Request(self.url, data=data, headers=self.headers)
-            with urllib.request.urlopen(req, timeout=10) as resp:  # nosec B310
-                return resp.status in (200, 201, 202, 204)
-        except Exception:
-            return False
+        return _post_json(self.url, alert_data, self.headers)
 
 
 class EmailAlertChannel:
