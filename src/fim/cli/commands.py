@@ -185,7 +185,7 @@ def create_parser() -> argparse.ArgumentParser:
     hash_parser = subparsers.add_parser("hash", help="Calculate cryptographic hashes for a file")
     hash_parser.add_argument("file", help="Path to file")
     hash_parser.add_argument(
-        "--algo", "-a", choices=["sha256", "sha512", "blake2b", "md5", "sha1"], default="sha256"
+        "--algo", "-a", choices=["sha256", "sha512", "blake2b"], default="sha256"
     )
 
     # Subcommand: report

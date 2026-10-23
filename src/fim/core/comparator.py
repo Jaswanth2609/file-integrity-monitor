@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
-from .baseline import BaselineEntry, BaselineManager
+from .baseline import ALLOWED_BASELINE_ALGORITHMS, BaselineEntry, BaselineManager
 from .hasher import HashEngine
 from .pkg_manager import PackageManagerVerifier
 from .rules import ChangeType, RuleEngine, Severity
@@ -148,6 +148,11 @@ class IntegrityComparator:
             public_key_path=public_key_path,
             old_key=old_key,
         )
+        if baseline.algo.lower() not in ALLOWED_BASELINE_ALGORITHMS:
+            raise ValueError(
+                f"Baseline profile '{profile_name}' uses unsupported or legacy algorithm '{baseline.algo}'. "
+                f"Allowed algorithms: {', '.join(ALLOWED_BASELINE_ALGORITHMS)}"
+            )
         baseline_files = baseline.files
 
         # 2. Collect current live files from baseline root paths

@@ -25,6 +25,8 @@ from ..storage.db import DatabaseManager
 
 logger = logging.getLogger("fim.baseline")
 
+ALLOWED_BASELINE_ALGORITHMS = ["sha256", "sha512", "blake2b"]
+
 
 @dataclass
 class BaselineEntry:
@@ -278,6 +280,10 @@ class BaselineManager:
         Explicitly tracks and logs any skipped or unreadable files.
         """
         selected_algo = (algo or self.config.get("hashing.default_algorithm", "sha256")).lower()
+        if selected_algo not in ALLOWED_BASELINE_ALGORITHMS:
+            raise ValueError(
+                f"Algorithm '{selected_algo}' is not permitted for baselines. Allowed: {', '.join(ALLOWED_BASELINE_ALGORITHMS)}"
+            )
         files = self.collect_files(paths, exclude_patterns, include_patterns)
         follow_symlinks = bool(self.config.get("hashing.follow_symlinks", False))
 

@@ -38,7 +38,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "default_algorithm": "sha256",
         "chunk_size_kb": 64,
         "max_workers": 4,
-        "allow_legacy_algorithms": True,
+        "allow_legacy_algorithms": False,
         "follow_symlinks": False,
     },
     "baseline": {

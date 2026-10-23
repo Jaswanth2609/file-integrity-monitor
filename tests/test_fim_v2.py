@@ -828,6 +828,21 @@ class TestFIMv2(unittest.TestCase):
                     resolve_api_token(cfg)
                 self.assertIn("Failed to read or persist API token", str(ctx.exception))
 
+    def test_tc046_legacy_algorithm_blocked_for_baseline(self):
+        """TC-046: Creating a baseline with legacy/unsupported algorithm (MD5/SHA-1) is blocked."""
+        b_mgr = BaselineManager(self.config, self.db)
+        test_dir = Path(self.test_dir) / "legacy_algo_dir"
+        test_dir.mkdir()
+        (test_dir / "file.txt").write_text("content", encoding="utf-8")
+
+        with self.assertRaises(ValueError) as ctx_md5:
+            b_mgr.create_baseline(name="legacy_md5", paths=[test_dir], algo="md5")
+        self.assertIn("not permitted for baselines", str(ctx_md5.exception))
+
+        with self.assertRaises(ValueError) as ctx_sha1:
+            b_mgr.create_baseline(name="legacy_sha1", paths=[test_dir], algo="sha1")
+        self.assertIn("not permitted for baselines", str(ctx_sha1.exception))
+
 
 if __name__ == "__main__":
     unittest.main()
