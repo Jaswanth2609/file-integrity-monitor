@@ -1,4 +1,4 @@
-// Default YARA Detection Rules for File Integrity Monitor (FIM) v2.1
+// Default YARA Detection Rules for File Integrity Monitor (FIM) v2.3
 // Add custom .yar / .yara files to this directory to expand threat signatures.
 
 rule WebShell_PHP_Advanced {

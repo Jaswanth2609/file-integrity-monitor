@@ -1,6 +1,6 @@
 """
-Comprehensive Test Suite for File Integrity Monitor (FIM) v2.1.
-Implements acceptance criteria test cases TC-001 through TC-039.
+Comprehensive Test Suite for File Integrity Monitor (FIM) v2.3.
+Implements acceptance criteria test cases TC-001 through TC-046.
 """
 
 import hashlib

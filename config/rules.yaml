@@ -1,4 +1,4 @@
-# File Integrity Monitor (FIM) v2.1 - Detection & Severity Rules
+# File Integrity Monitor (FIM) v2.3 - Detection & Severity Rules
 # This file defines severity scoring, MITRE ATT&CK mappings, and path classifications.
 # Customize patterns, severity levels, and MITRE tactics to match your organization's threat model.
 
