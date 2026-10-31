@@ -3,6 +3,7 @@ Real-time Filesystem Event Monitor and Scheduler for FIM v2.3.
 Supports event debouncing, scheduled re-verification, threat intel enrichment, and alerting.
 """
 
+import os
 import threading
 import time
 from pathlib import Path
@@ -95,6 +96,13 @@ class LiveMonitor:
                     verify=True,
                     public_key_path=self.public_key_path,
                 )
+                # Normalize baseline path storage with realpath
+                normalized_files = {}
+                for p_str, entry in verified.files.items():
+                    norm_path = os.path.realpath(str(p_str))
+                    entry.path = norm_path
+                    normalized_files[norm_path] = entry
+                verified.files = normalized_files
                 self._cached_baseline = verified
                 self._db_mtime = curr_mtime
             return self._cached_baseline
@@ -141,9 +149,9 @@ class LiveMonitor:
 
             def on_any_event(self, event: Any):
                 if not event.is_directory:
-                    self.monitor.debounce_queue.add(event.src_path)
+                    self.monitor.debounce_queue.add(os.path.realpath(str(event.src_path)))
                     if hasattr(event, "dest_path") and event.dest_path:
-                        self.monitor.debounce_queue.add(event.dest_path)
+                        self.monitor.debounce_queue.add(os.path.realpath(str(event.dest_path)))
 
         self._observer = Observer()
         handler = WatchdogHandler(self)
@@ -161,7 +169,7 @@ class LiveMonitor:
             for fp in files:
                 try:
                     mtime = fp.stat().st_mtime
-                    path_str = str(fp)
+                    path_str = os.path.realpath(str(fp))
                     if path_str in known_mtimes and known_mtimes[path_str] != mtime:
                         self.debounce_queue.add(path_str)
                     known_mtimes[path_str] = mtime
@@ -177,6 +185,7 @@ class LiveMonitor:
             time.sleep(0.5)
 
     def _handle_path_change(self, path_str: str) -> None:
+        path_str = os.path.realpath(str(path_str))
         p = Path(path_str)
         try:
             baseline = self._get_verified_baseline()
