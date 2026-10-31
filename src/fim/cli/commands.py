@@ -262,7 +262,8 @@ def main_cli(args_list: Optional[List[str]] = None) -> int:
             return 1
         print(f"File     : {h_res.path}")
         print(f"SHA-256  : {h_res.sha256}")
-        print(f"MD5      : {h_res.md5}")
+        if h_res.md5:
+            print(f"MD5      : {h_res.md5}")
         if not args.no_vt and config.vt_api_key:
             vt = VirusTotalClient(config=config, db=db)
             report = vt.query_hash(h_res.sha256)

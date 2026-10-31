@@ -98,7 +98,7 @@ class HashEngine:
         if not path.is_file():
             raise FileNotFoundError_(f"Path is not a regular file: {path}")
 
-        algos = [a.lower() for a in (algorithms or [self.default_algo, "md5"])]
+        algos = [a.lower() for a in (algorithms or [self.default_algo])]
 
         # Check legacy warning
         for a in algos:
@@ -191,7 +191,7 @@ class HashEngine:
         try:
             st = p.stat()
             hashes = self.calculate_hashes(
-                p, algorithms=algorithms or ["sha256", "md5", "sha512", "blake2b"]
+                p, algorithms=algorithms or ["sha256", "sha512", "blake2b"]
             )
             return HashResult(
                 path=str(p.resolve()),

@@ -288,7 +288,8 @@ class InteractiveMenu:
             print(f"SHA-256  : {Colors.CYAN}{res.sha256}{Colors.RESET}")
             print(f"SHA-512  : {res.sha512}")
             print(f"BLAKE2b  : {res.blake2b}")
-            print(f"MD5      : {res.md5}")
+            if res.md5:
+                print(f"MD5      : {res.md5}")
         input("\nPress Enter to return...")
 
     def _menu_query_intel(self):
