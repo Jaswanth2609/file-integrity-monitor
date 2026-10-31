@@ -408,12 +408,19 @@ class BaselineManager:
                     or self.config.get("signing.public_key_path")
                     or Path("~/.fim/fim_ed25519.pub").expanduser()
                 )
+                pub_p = Path(pub_p).expanduser().resolve()
+                if not pub_p.exists():
+                    raise BaselineTamperedError(
+                        f"Baseline '{name}' is signed with Ed25519 asymmetric key, but public key file was not found at '{pub_p}'.",
+                        fix="Provide the Ed25519 public key file using --pubkey <path_to_pubkey>.",
+                    )
                 canonical_bytes = self._get_canonical_bytes(files_data)
                 valid = AsymmetricEngine.verify_payload(canonical_bytes, sig_hex, pub_p)
                 if not valid:
                     raise BaselineTamperedError(
                         f"Baseline '{name}' Ed25519 asymmetric signature verification failed! "
-                        f"Possible unauthorized database tampering or incorrect public key."
+                        f"Possible unauthorized database tampering or incorrect public key.",
+                        fix="Ensure the correct Ed25519 public key was provided via --pubkey, or investigate database tampering.",
                     )
             else:
                 # Symmetric HMAC verification

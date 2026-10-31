@@ -195,6 +195,9 @@ def create_parser() -> argparse.ArgumentParser:
         "--format", "-f", choices=["html", "json", "csv", "txt"], default="html"
     )
     rep_parser.add_argument("--output", "-o", default="reports/fim_audit_report.html")
+    rep_parser.add_argument(
+        "--pubkey", help="Path to Ed25519 public key for asymmetric signature verification"
+    )
 
     # Subcommand: config
     cfg_parser = subparsers.add_parser("config", help="Get or set configuration options")
@@ -562,7 +565,20 @@ def main_cli(args_list: Optional[List[str]] = None) -> int:
 
     elif cmd == "report":
         comp = IntegrityComparator(config, db)
-        summary = comp.check_baseline(profile_name=args.profile)
+        try:
+            summary = comp.check_baseline(
+                profile_name=args.profile,
+                public_key_path=getattr(args, "pubkey", None),
+            )
+        except BaselineTamperedError as e:
+            print(f"{Colors.RED}[CRITICAL ERROR 2] {e}{Colors.RESET}", file=sys.stderr)
+            return 2
+        except Exception as e:
+            print(
+                f"{Colors.RED}[ERROR 2] Report generation failed: {e}{Colors.RESET}",
+                file=sys.stderr,
+            )
+            return 2
         if args.format == "html":
             ReportGenerator.export_to_html(summary, args.output)
         elif args.format == "json":

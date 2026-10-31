@@ -70,11 +70,12 @@ class ConfigurationError(FIMError):
 
 
 class BaselineTamperedError(FIMError):
-    def __init__(self, message: str):
+    def __init__(self, message: str, fix: Optional[str] = None):
         super().__init__(
             "E009",
             message,
-            "Baseline HMAC signature verification failed. Possible unauthorized tampering detected!",
+            fix
+            or "Baseline signature verification failed. Possible unauthorized tampering detected!",
         )
 
 
@@ -142,8 +143,8 @@ ERROR_REGISTRY: Dict[str, Dict[str, str]] = {
     },
     "E009": {
         "title": "Baseline Tampering Detected",
-        "description": "Cryptographic signature (HMAC-SHA256) of baseline does not match recorded state.",
-        "fix": "Investigate system for unauthorized baseline alterations or re-sign using authentic master key.",
+        "description": "Cryptographic signature of baseline does not match recorded state.",
+        "fix": "Investigate system for unauthorized baseline alterations, or provide the authentic signing/public key.",
     },
     "E010": {
         "title": "Audit Log Chain Integrity Failure",

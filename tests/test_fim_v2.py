@@ -843,6 +843,45 @@ class TestFIMv2(unittest.TestCase):
             b_mgr.create_baseline(name="legacy_sha1", paths=[test_dir], algo="sha1")
         self.assertIn("not permitted for baselines", str(ctx_sha1.exception))
 
+    def test_tc047_report_ed25519_baseline_pubkey(self):
+        """TC-047: fim report on Ed25519 baseline requires --pubkey and provides accurate remediation."""
+        from fim.crypto.asymmetric import AsymmetricEngine
+
+        asym_dir = Path(self.test_dir) / "asym_rep_dir"
+        asym_dir.mkdir()
+        (asym_dir / "target.txt").write_text("secure content", encoding="utf-8")
+
+        priv_key_file = Path(self.test_dir) / "test_ed25519"
+        pub_key_file = Path(self.test_dir) / "test_ed25519.pub"
+        AsymmetricEngine.save_keypair(priv_key_file, pub_key_file)
+
+        b_mgr = BaselineManager(self.config, self.db)
+        b_mgr.create_baseline(
+            name="asym_rep_prof",
+            paths=[asym_dir],
+            signing_type="ed25519",
+            private_key_path=priv_key_file,
+        )
+
+        comp = IntegrityComparator(self.config, self.db)
+
+        # 1. Missing pubkey raises BaselineTamperedError with Ed25519 remediation (not HMAC)
+        non_existent_key = Path(self.test_dir) / "non_existent.pub"
+        with self.assertRaises(BaselineTamperedError) as ctx:
+            comp.check_baseline(profile_name="asym_rep_prof", public_key_path=non_existent_key)
+        self.assertIn("Ed25519", str(ctx.exception))
+        self.assertNotIn("HMAC", str(ctx.exception))
+
+        # 2. Providing correct pubkey succeeds
+        summary = comp.check_baseline(profile_name="asym_rep_prof", public_key_path=pub_key_file)
+        self.assertEqual(summary.profile, "asym_rep_prof")
+        self.assertFalse(summary.has_changes)
+
+        # 3. Report generation succeeds with pubkey
+        out_html = Path(self.test_dir) / "out.html"
+        ReportGenerator.export_to_html(summary, str(out_html))
+        self.assertTrue(out_html.exists())
+
 
 if __name__ == "__main__":
     unittest.main()
