@@ -6,3 +6,5 @@ venv/
 *.sqlite3
 /reports/
 config/config.yaml
+.coverage
+.coverage.*
