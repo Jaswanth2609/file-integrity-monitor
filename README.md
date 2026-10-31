@@ -146,6 +146,9 @@ fim check --profile sys-profile --pubkey ~/.fim/fim_ed25519.pub --interval 300
 
 # Export results to HTML, JSON, or CSV
 fim check --profile sys-profile --export-html report.html --export-json report.json
+
+# Generate standalone report for an existing profile
+fim report --profile sys-profile --pubkey ~/.fim/fim_ed25519.pub --format html --output report.html
 ```
 
 ### 4. Real-Time Monitoring Daemon
@@ -192,11 +195,15 @@ fim serve --host 127.0.0.1 --port 8000
 - **Loopback Enforcement**: The server refuses to bind to non-loopback addresses (`0.0.0.0`) unless `--allow-remote` is explicitly passed.
 - **Authentication**: On startup, a cryptographically secure 256-bit token is saved to `.api_token` with `0600` file permissions. All requests must provide this token via the `Authorization: Bearer <token>` or `X-API-Key: <token>` header.
 - **Endpoints**:
-  - `GET /health` — Service status
-  - `GET /api/status` — System summary and metrics
+  - `GET /health` — Service health check
   - `GET /api/baselines` — List registered baselines
   - `GET /api/findings` — Query detected integrity anomalies
-  - `GET /api/reports/download?format=html|json|csv` — Export reports
+  - `GET /api/audit` — Query audit ledger and verify hash chain integrity
+  - `GET /api/reports/html?profile=<name>` — Export HTML report
+  - `GET /api/reports/json?profile=<name>` — Export JSON report
+  - `GET /api/reports/csv?profile=<name>` — Export CSV report
+  - `POST /api/baselines` — Create a new baseline
+  - `POST /api/checks` — Trigger baseline check
   - `GET /metrics` — Prometheus metrics format
 
 ### 8. Interactive Menu
