@@ -33,7 +33,7 @@ def create_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("--config", "-c", help="Path to custom configuration file (YAML/JSON)")
-    parser.add_argument("--version", "-v", action="version", version="FIM v2.3.1 (by Jaswanth)")
+    parser.add_argument("--version", "-v", action="version", version="FIM v2.3.2 (by Jaswanth)")
 
     subparsers = parser.add_subparsers(dest="command", help="Available subcommands")
 
