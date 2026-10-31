@@ -379,8 +379,14 @@ def main_cli(args_list: Optional[List[str]] = None) -> int:
                 else:
                     print(f"{Colors.RED}[!] ATTENTION: File changes detected:{Colors.RESET}")
                     for f in summary.findings:
-                        col = Colors.RED if f.severity in ("CRITICAL", "HIGH") else Colors.WARNING
-                        print(f"  {col}[{f.severity}] {f.change_type}: {f.path}{Colors.RESET}")
+                        col = (
+                            Colors.RED
+                            if f.severity.value in ("CRITICAL", "HIGH")
+                            else Colors.WARNING
+                        )
+                        print(
+                            f"  {col}[{f.severity.value}] {f.change_type.value}: {f.path}{Colors.RESET}"
+                        )
                         print(f"      {f.description}")
 
             if args.export_html:

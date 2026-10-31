@@ -264,8 +264,12 @@ class InteractiveMenu:
                 f"{Colors.RED}[!] ALERT: {len(summary.findings)} changes detected!{Colors.RESET}\n"
             )
             for f in summary.findings:
-                sev_color = Colors.RED if f.severity in ("CRITICAL", "HIGH") else Colors.WARNING
-                print(f"  {sev_color}[{f.severity}] {f.change_type}: {f.path}{Colors.RESET}")
+                sev_color = (
+                    Colors.RED if f.severity.value in ("CRITICAL", "HIGH") else Colors.WARNING
+                )
+                print(
+                    f"  {sev_color}[{f.severity.value}] {f.change_type.value}: {f.path}{Colors.RESET}"
+                )
                 print(f"      {f.description}")
 
     def _menu_hash_file(self):
