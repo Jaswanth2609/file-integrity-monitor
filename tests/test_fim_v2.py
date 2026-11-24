@@ -847,6 +847,9 @@ class TestFIMv2(unittest.TestCase):
         """TC-047: fim report on Ed25519 baseline requires --pubkey and provides accurate remediation."""
         from fim.crypto.asymmetric import AsymmetricEngine
 
+        if not AsymmetricEngine.is_available():
+            self.skipTest("cryptography library not installed")
+
         asym_dir = Path(self.test_dir) / "asym_rep_dir"
         asym_dir.mkdir()
         (asym_dir / "target.txt").write_text("secure content", encoding="utf-8")
@@ -881,6 +884,182 @@ class TestFIMv2(unittest.TestCase):
         out_html = Path(self.test_dir) / "out.html"
         ReportGenerator.export_to_html(summary, str(out_html))
         self.assertTrue(out_html.exists())
+
+    def test_tc048_intel_caching_compat(self):
+        """Test cache_intel and get_cached_intel with file_hash, hash_val, and positional arguments."""
+        # 1. Positional
+        self.db.cache_intel("a" * 64, "VT", "MALICIOUS", 10, 70, {"details": "pos"}, ttl_seconds=3600)
+        c1 = self.db.get_cached_intel("a" * 64)
+        self.assertIsNotNone(c1)
+        self.assertEqual(c1["verdict"], "MALICIOUS")
+
+        # 2. Keyword with file_hash
+        self.db.cache_intel(
+            file_hash="b" * 64,
+            provider="VT",
+            verdict="SAFE",
+            detections=0,
+            total_engines=70,
+            raw_json={"details": "fh"},
+            ttl_seconds=3600,
+        )
+        c2 = self.db.get_cached_intel(file_hash="b" * 64)
+        self.assertIsNotNone(c2)
+        self.assertEqual(c2["verdict"], "SAFE")
+
+        # 3. Keyword with hash_val (backwards compat)
+        self.db.cache_intel(
+            hash_val="c" * 64,
+            provider="VT",
+            verdict="SUSPICIOUS",
+            detections=2,
+            total_engines=70,
+            raw_json={"details": "hv"},
+            ttl_seconds=3600,
+        )
+        c3 = self.db.get_cached_intel(hash_val="c" * 64)
+        self.assertIsNotNone(c3)
+        self.assertEqual(c3["verdict"], "SUSPICIOUS")
+
+    def test_tc049_virustotal_query_hash_caching(self):
+        """Test VirusTotal query_hash end-to-end caching with malicious report."""
+        from unittest.mock import MagicMock, patch
+        from fim.intel.base import Verdict
+        from fim.intel.virustotal import VirusTotalClient
+
+        vt = VirusTotalClient(api_key="mock_key", config=self.config, db=self.db)
+        mock_resp_data = {
+            "data": {
+                "attributes": {
+                    "last_analysis_stats": {
+                        "malicious": 58,
+                        "suspicious": 1,
+                        "undetected": 10,
+                        "harmless": 0,
+                    },
+                    "last_analysis_results": {
+                        "EngineA": {"category": "malicious", "result": "Trojan.WannaCry"},
+                        "EngineB": {"category": "malicious", "result": "Ransom.WannaCrypt"},
+                    },
+                    "tags": ["ransomware", "wannacry"],
+                }
+            }
+        }
+
+        with patch("requests.get") as mock_get:
+            mock_resp = MagicMock()
+            mock_resp.status_code = 200
+            mock_resp.json.return_value = mock_resp_data
+            mock_get.return_value = mock_resp
+
+            mal_hash = "747ae1b6626bd476e0d01ca5862d73d789393ec17481ca652669351d43a6bd3a"
+            report = vt.query_hash(mal_hash)
+            self.assertEqual(report.verdict, Verdict.MALICIOUS)
+            self.assertEqual(report.malicious_count, 58)
+            self.assertIn("EngineA: Trojan.WannaCry", report.threat_names)
+            self.assertFalse(report.cached)
+
+            # Second lookup should return from SQLite cache without calling requests.get again
+            report_cached = vt.query_hash(mal_hash)
+            self.assertEqual(report_cached.verdict, Verdict.MALICIOUS)
+            self.assertEqual(report_cached.malicious_count, 58)
+            self.assertTrue(report_cached.cached)
+            self.assertIn("EngineA: Trojan.WannaCry", report_cached.threat_names)
+            self.assertEqual(mock_get.call_count, 1)
+
+    def test_tc050_security_headers_and_csp(self):
+        """TC-050: Server responses must include Content-Security-Policy and browser defense headers."""
+        sent_headers = {}
+
+        class MockHandler:
+            def send_header(self, k, v):
+                sent_headers[k] = v
+
+        mock = MockHandler()
+        FIMHttpHandler._send_security_headers(mock)
+
+        self.assertEqual(sent_headers.get("Content-Security-Policy"), "default-src 'self'")
+        self.assertEqual(sent_headers.get("X-Content-Type-Options"), "nosniff")
+        self.assertEqual(sent_headers.get("X-Frame-Options"), "DENY")
+        self.assertEqual(sent_headers.get("Referrer-Policy"), "no-referrer")
+
+    def test_tc051_finding_accept_attribution_unforgeable(self):
+        """TC-051: POST /findings/<id>/accept resolves reviewer from server config, ignoring forged body user."""
+        import io
+
+        # Save a finding to the database
+        run_id = self.db.start_scan_run("test-profile", 1000.0)
+        finding_dict = {
+            "path": "/tmp/malicious_payload.sh",
+            "severity": "CRITICAL",
+            "change_type": "ADDED",
+            "description": "Unauthorized file addition",
+        }
+        self.db.save_findings(run_id, [finding_dict])
+        unresolved = self.db.get_unresolved_findings()
+        self.assertGreaterEqual(len(unresolved), 1)
+        fid = unresolved[0]["id"]
+
+        responses = []
+
+        class MockAcceptPostHandler:
+            path = f"/findings/{fid}/accept"
+            db = self.db
+            config = self.config
+            MAX_REQUEST_BODY_BYTES = 1024 * 1024
+
+            def _check_auth(self):
+                return True
+
+            def _send_json(self, status, payload):
+                responses.append((status, payload))
+
+        # Attempt to spoof identity in request body
+        forged_payload = json.dumps({"user": "forged_superadmin"}).encode("utf-8")
+        handler = MockAcceptPostHandler()
+        handler.headers = {"Content-Length": str(len(forged_payload))}
+        handler.rfile = io.BytesIO(forged_payload)
+
+        # Set configured server identity
+        self.config.set("api.reviewer_identity", "secops-server-identity")
+
+        FIMHttpHandler.do_POST(handler)
+
+        self.assertEqual(responses[-1][0], 200)
+        self.assertTrue(responses[-1][1]["success"])
+        self.assertEqual(responses[-1][1]["accepted_by"], "secops-server-identity")
+
+        # Verify audit ledger contains server-side identity, not the forged body value
+        audit_records = self.db.audit.get_recent_records(limit=5)
+        accepted_events = [r for r in audit_records if r["event"] == "FINDING_ACCEPTED"]
+        self.assertTrue(len(accepted_events) > 0)
+        last_event = accepted_events[-1]
+        self.assertEqual(last_event["details"]["user"], "secops-server-identity")
+        self.assertNotEqual(last_event["details"]["user"], "forged_superadmin")
+
+    def test_tc052_dashboard_xss_and_localstorage_hardening(self):
+        """TC-052: Static dashboard files must not store token in localStorage and must avoid innerHTML injection."""
+        web_dir = _src_dir / "fim" / "web"
+        js_file = web_dir / "dashboard.js"
+        html_file = web_dir / "index.html"
+
+        js_content = js_file.read_text(encoding="utf-8")
+        html_content = html_file.read_text(encoding="utf-8")
+
+        # 1. Token must NOT be saved to localStorage
+        self.assertNotIn('localStorage.setItem("fim_api_token"', js_content)
+        self.assertIn('localStorage.removeItem("fim_api_token")', js_content)
+
+        # 2. HTML must have CSP meta tag and no inline script/onclick handlers
+        self.assertIn("default-src 'self'", html_content)
+        self.assertNotIn("onclick=", html_content)
+        self.assertNotIn("oninput=", html_content)
+
+        # 3. JS rendering must use safe textContent and setAttribute rather than innerHTML path interpolation
+        self.assertNotIn('title="${f.path}"', js_content)
+        self.assertNotIn('<td>${f.description || \'\'}</td>', js_content)
+        self.assertIn("textContent", js_content)
+        self.assertIn('setAttribute("title"', js_content)
 
 
 if __name__ == "__main__":
