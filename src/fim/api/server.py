@@ -54,11 +54,19 @@ class FIMHttpHandler(http.server.SimpleHTTPRequestHandler):
             return request_origin
         return ""
 
+    def _send_security_headers(self):
+        """Applies Content-Security-Policy and standard browser defense headers."""
+        self.send_header("Content-Security-Policy", "default-src 'self'")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("X-Frame-Options", "DENY")
+        self.send_header("Referrer-Policy", "no-referrer")
+
     def _send_json(self, status: int, data: Any, include_cors: bool = True):
         payload = json.dumps(data, indent=2).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(payload)))
+        self._send_security_headers()
         if include_cors:
             origin = self._get_cors_origin()
             if origin:
@@ -76,6 +84,7 @@ class FIMHttpHandler(http.server.SimpleHTTPRequestHandler):
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
         self.send_header("Content-Length", str(len(content)))
+        self._send_security_headers()
         origin = self._get_cors_origin()
         if origin:
             self.send_header("Access-Control-Allow-Origin", origin)
@@ -147,6 +156,7 @@ class FIMHttpHandler(http.server.SimpleHTTPRequestHandler):
                 self.send_response(200)
                 self.send_header("Content-Type", mime)
                 self.send_header("Content-Length", str(len(content)))
+                self._send_security_headers()
                 self.end_headers()
                 self.wfile.write(content)
                 return
@@ -176,6 +186,7 @@ class FIMHttpHandler(http.server.SimpleHTTPRequestHandler):
             self.send_response(200)
             self.send_header("Content-Type", "text/plain; version=0.0.4")
             self.send_header("Content-Length", str(len(payload)))
+            self._send_security_headers()
             self.end_headers()
             self.wfile.write(payload)
 
@@ -317,9 +328,18 @@ class FIMHttpHandler(http.server.SimpleHTTPRequestHandler):
             parts = path.strip("/").split("/")
             try:
                 fid = int(parts[1])
-                user = body.get("user", "api-user")
+                # Resolve reviewer identity strictly from server-side configuration to prevent audit forgery
+                configured_user = (
+                    self.config.get("api.reviewer_identity")
+                    or self.config.get("api.operator_identity")
+                    or self.config.get("api.user")
+                    or os.getenv("FIM_API_REVIEWER")
+                    or os.getenv("FIM_API_USER")
+                    or "api-reviewer"
+                )
+                user = str(configured_user).strip()
                 ok = self.db.accept_finding(fid, user=user)
-                self._send_json(200, {"success": ok, "finding_id": fid})
+                self._send_json(200, {"success": ok, "finding_id": fid, "accepted_by": user})
             except Exception as e:
                 self._send_json(400, {"error": str(e)})
 
